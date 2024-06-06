@@ -9,7 +9,7 @@
 <body>
 
 <video id="video" loop muted crossOrigin="anonymous" playsinline style="display:none">
-    <source src="kinect3.mp4">
+    <source src="kinect2.mp4">
 </video>
 
 <script id="vs" type="x-shader/x-vertex">
@@ -35,6 +35,12 @@
             1.0
         );
         gl_PointSize = pointSize;
+        // Apply rotation around X axis (90 degrees)
+        pos.xyz = mat3(
+            1, 0, 0,
+            0, cos(1.5708), -sin(1.5708),
+            0, sin(1.5708), cos(1.5708)
+        ) * pos.xyz;
         gl_Position = projectionMatrix * modelViewMatrix * pos;
     }
 </script>
@@ -57,7 +63,6 @@
     let scene, camera, renderer;
     let geometry, mesh, material;
     let mouse, center;
-    let rotationX = -1.67;
 
     init();
 
@@ -114,7 +119,13 @@
         gui.add(material.uniforms.farClipping, 'value', 1, 10000, 1.0).name('farClipping');
         gui.add(material.uniforms.pointSize, 'value', 1, 10, 2.0).name('pointSize');
         gui.add(material.uniforms.zOffset, 'value', 0, 10000, 1.0).name('zOffset');
-        gui.add({ rotationX: 0 }, 'rotationX', -Math.PI, Math.PI, 0.01).name('Rotation X').onChange(value => rotationX = value);
+
+        // Adding scale control
+        const scaleControl = gui.add(mesh.scale, 'x', 0.1, 10).name('Scale');
+        scaleControl.onChange(() => {
+            mesh.scale.y = mesh.scale.x; // Ensure uniform scaling
+            mesh.scale.z = mesh.scale.x;
+        });
 
         video.play();
 
@@ -147,9 +158,6 @@
         camera.position.x += (mouse.x - camera.position.x) * 0.05;
         camera.position.y += (-mouse.y - camera.position.y) * 0.05;
         camera.lookAt(center);
-
-        scene.rotation.x = rotationX;
-
         renderer.render(scene, camera);
     }
 
