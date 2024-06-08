@@ -9,7 +9,7 @@
 <body>
 
 <video id="video" loop muted crossOrigin="anonymous" playsinline style="display:none">
-    <source src="kinect2.mp4">
+    <source src="output.mp4">
 </video>
 
 <script id="vs" type="x-shader/x-vertex">
@@ -26,7 +26,7 @@
     void main() {
         vUv = vec2(position.x / width, position.y / height);
         vec4 color = texture2D(map, vUv);
-        float depth = (color.r);
+        float depth = (color.r + color.g + color.b) / 3.0;
         float z = (1.0 - depth) * (farClipping - nearClipping) + nearClipping;
         vec4 pos = vec4(
             (position.x / width - 0.5) * z * XtoZ,
@@ -75,19 +75,19 @@
 
         scene = new THREE.Scene();
         center = new THREE.Vector3();
-        center.z = -1000;
+        center.z = -2000;
 
         const video = document.getElementById('video');
         const texture = new THREE.VideoTexture(video);
         texture.minFilter = THREE.NearestFilter;
 
-        const width = 640, height = 480;
-        const nearClipping = 1, farClipping = 10000;
+        const width = 1600, height = 1056;
+        const nearClipping = 2000, farClipping = 4000;
 
         geometry = new THREE.BufferGeometry();
         const vertices = new Float32Array(width * height * 3);
 
-        for (let i = 0, j = 0, l = vertices.length; i < l; i += 3, j++) {
+        for (let i = 0, j = 0, l = vertices.length; i < l; i += 2, j++) {
             vertices[i] = j % width;
             vertices[i + 1] = Math.floor(j / width);
         }
@@ -115,8 +115,8 @@
         scene.add(mesh);
 
         const gui = new GUI();
-        gui.add(material.uniforms.nearClipping, 'value', 1, 10000, 1.0).name('nearClipping');
-        gui.add(material.uniforms.farClipping, 'value', 1, 10000, 1.0).name('farClipping');
+        gui.add(material.uniforms.nearClipping, 'value', 1, 3000, 1.0).name('nearClipping');
+        gui.add(material.uniforms.farClipping, 'value', 1, 8000, 1.0).name('farClipping');
         gui.add(material.uniforms.pointSize, 'value', 1, 10, 2.0).name('pointSize');
         gui.add(material.uniforms.zOffset, 'value', 0, 10000, 1.0).name('zOffset');
 
