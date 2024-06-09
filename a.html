@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
-    <title>Demo Kinect</title>
+    <title>three.js - kinect</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <link type="text/css" rel="stylesheet" href="main.css">
@@ -35,12 +35,6 @@
             1.0
         );
         gl_PointSize = pointSize;
-        // Apply rotation around X axis (90 degrees)
-        pos.xyz = mat3(
-            1, 0, 0,
-            0, cos(1.5708), -sin(1.5708),
-            0, sin(1.5708), cos(1.5708)
-        ) * pos.xyz;
         gl_Position = projectionMatrix * modelViewMatrix * pos;
     }
 </script>
@@ -51,7 +45,7 @@
 
     void main() {
         vec4 color = texture2D(map, vUv);
-        gl_FragColor = vec4(color.r, color.g, color.b, 1);
+        gl_FragColor = vec4(color.r, color.g, color.b, 0.2);
     }
 </script>
 
@@ -75,14 +69,14 @@
 
         scene = new THREE.Scene();
         center = new THREE.Vector3();
-        center.z = 1000;
+        center.z = -1000;
 
         const video = document.getElementById('video');
         const texture = new THREE.VideoTexture(video);
         texture.minFilter = THREE.NearestFilter;
 
-        const width = 1600, height = 1056;
-        const nearClipping = 2000, farClipping = 4000;
+        const width = 640, height = 480;
+        const nearClipping = 1, farClipping = 10000;
 
         geometry = new THREE.BufferGeometry();
         const vertices = new Float32Array(width * height * 3);
@@ -101,7 +95,7 @@
                 'height': { value: height },
                 'nearClipping': { value: nearClipping },
                 'farClipping': { value: farClipping },
-                'pointSize': { value: 1 },
+                'pointSize': { value: 4 },
                 'zOffset': { value: 3500 }
             },
             vertexShader: document.getElementById('vs').textContent,
@@ -115,21 +109,14 @@
         scene.add(mesh);
 
         const gui = new GUI();
-        gui.add(material.uniforms.nearClipping, 'value', 1, 3000, 1.0).name('nearClipping');
-        gui.add(material.uniforms.farClipping, 'value', 1, 8000, 1.0).name('farClipping');
+        gui.add(material.uniforms.nearClipping, 'value', 1, 10000, 1.0).name('nearClipping');
+        gui.add(material.uniforms.farClipping, 'value', 1, 10000, 1.0).name('farClipping');
         gui.add(material.uniforms.pointSize, 'value', 1, 10, 2.0).name('pointSize');
-        gui.add(material.uniforms.zOffset, 'value', 0, 10000, 1.0).name('zOffset');
-
-        // Adding scale control
-        const scaleControl = gui.add(mesh.scale, 'x', 0.1, 10).name('Scale');
-        scaleControl.onChange(() => {
-            mesh.scale.y = mesh.scale.x; // Ensure uniform scaling
-            mesh.scale.z = mesh.scale.x;
-        });
+        gui.add(material.uniforms.zOffset, 'value', 0, 4000, 1.0).name('zOffset');
 
         video.play();
 
-        renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.xr.enabled = true;
