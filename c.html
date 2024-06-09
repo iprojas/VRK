@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
-    <title>three.js - kinect</title>
+    <title>Demo Kinect</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <link type="text/css" rel="stylesheet" href="main.css">
@@ -9,7 +9,7 @@
 <body>
 
 <video id="video" loop muted crossOrigin="anonymous" playsinline style="display:none">
-    <source src="output.mp4">
+    <source src="kinect2.mp4">
 </video>
 
 <script id="vs" type="x-shader/x-vertex">
@@ -35,6 +35,12 @@
             1.0
         );
         gl_PointSize = pointSize;
+        // Apply rotation around X axis (90 degrees)
+        pos.xyz = mat3(
+            1, 0, 0,
+            0, cos(1.5708), -sin(1.5708),
+            0, sin(1.5708), cos(1.5708)
+        ) * pos.xyz;
         gl_Position = projectionMatrix * modelViewMatrix * pos;
     }
 </script>
@@ -45,7 +51,7 @@
 
     void main() {
         vec4 color = texture2D(map, vUv);
-        gl_FragColor = vec4(color.r, color.g, color.b, 1);
+        gl_FragColor = vec4(color.r, color.g, color.b, 0.2);
     }
 </script>
 
@@ -112,7 +118,14 @@
         gui.add(material.uniforms.nearClipping, 'value', 1, 10000, 1.0).name('nearClipping');
         gui.add(material.uniforms.farClipping, 'value', 1, 10000, 1.0).name('farClipping');
         gui.add(material.uniforms.pointSize, 'value', 1, 10, 2.0).name('pointSize');
-        gui.add(material.uniforms.zOffset, 'value', 0, 4000, 1.0).name('zOffset');
+        gui.add(material.uniforms.zOffset, 'value', 0, 10000, 1.0).name('zOffset');
+
+        // Adding scale control
+        const scaleControl = gui.add(mesh.scale, 'x', 0.1, 10).name('Scale');
+        scaleControl.onChange(() => {
+            mesh.scale.y = mesh.scale.x; // Ensure uniform scaling
+            mesh.scale.z = mesh.scale.x;
+        });
 
         video.play();
 
