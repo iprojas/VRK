@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <title>VR Kinect Demo (Optimized)</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #info { position: absolute; top: 10px; width: 100%; text-align: center; color: #ffffff; }
+    </style>
+</head>
+<body>
+<div id="info">VR Kinect Demo (Optimized)</div>
+<video id="video" loop muted crossOrigin="anonymous" playsinline style="display:none">
+    <source src="https://iprojas.github.io/VRK/kinect2.mp4" type="video/mp4">
+</video>
+
+<script id="vs" type="x-shader/x-vertex">
+    uniform float width;
+    uniform float height;
+    uniform float nearClipping, farClipping;
+    uniform float pointSize;
+    uniform float zOffset;
+    uniform sampler2D map;
+
+    varying vec2 vUv;
+
+    const float XtoZ = 1.11146; // tan(1.0144686)
+    const float YtoZ = 0.83359; // tan(0.7898090)
+
+    void main() {
+        vUv = vec2(position.x / width, position.y / height);
+
+        vec4 color = texture2D(map, vUv);
+        float depth = (color.r + color.g + color.b) / 3.0;
+
+        float z = (1.0 - depth) * (farClipping - nearClipping) + nearClipping;
+
+        vec4 pos = vec4(
+            (position.x - width * 0.4) * z * XtoZ,
+            (position.y - height * 0.5) * z * YtoZ,
+            -z + zOffset,
+            1.0
+        );
+
+        gl_PointSize = pointSize;
+        gl_Position = projectionMatrix * modelViewMatrix * pos;
+    }
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+    uniform sampler2D map;
+    varying vec2 vUv;
+
+    void main() {
+        vec4 color = texture2D(map, vUv);
+        gl_FragColor = vec4(color.r, color.g, color.b, 0.8);
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.143/build/three.module.js';
+    import { GUI } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/libs/lil-gui.module.min.js';
+    import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/webxr/VRButton.js';
+    import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/webxr/XRControllerModelFactory.js';
+
+    let scene, camera, renderer, mesh, material;
+    let controller1, controller2, controllerGrip1, controllerGrip2;
+    let frameCounter = 0;
+    let lastTime = performance.now();
+
+    const mouse = new THREE.Vector2();
+    const center = new THREE.Vector3(0, 0, -2);
+
+    init();
+
+    function init() {
+        camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10000);
+        camera.position.set(0, 1.6, 3);
+
+        scene = new THREE.Scene();
+
+        const video = document.getElementById('video');
+        const texture = new THREE.VideoTexture(video);
+        texture.minFilter = THREE.NearestFilter;
+
+        const width = 640, height = 480;
+        const nearClipping = 1000, farClipping = 6000;
+
+        const geometry = new THREE.BufferGeometry();
+        const vertices = new Float32Array(width * height * 3);
+
+        for (let i = 0, j = 0, l = vertices.length; i < l; i += 3, j++) {
+            vertices[i] = j % width;
+            vertices[i + 1] = Math.floor(j / width);
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+        material = new THREE.ShaderMaterial({
+            uniforms: {
+                map: { value: texture },
+                width: { value: width },
+                height: { value: height },
+                nearClipping: { value: nearClipping },
+                farClipping: { value: farClipping },
+                pointSize: { value: 2 },
+                zOffset: { value: 2500 }
+            },
+            vertexShader: document.getElementById('vs').textContent,
+            fragmentShader: document.getElementById('fs').textContent,
+            blending: THREE.AdditiveBlending,
+            depthTest: false, depthWrite: false,
+            transparent: true
+        });
+
+        mesh = new THREE.Points(geometry, material);
+        scene.add(mesh);
+
+        const gui = new GUI();
+        gui.add(material.uniforms.nearClipping, 'value', 1, 2000, 1.0).name('nearClipping');
+        gui.add(material.uniforms.farClipping, 'value', 1, 6000, 1.0).name('farClipping');
+        gui.add(material.uniforms.pointSize, 'value', 1, 3, 0.25).name('pointSize');
+        gui.add(material.uniforms.zOffset, 'value', 0, 8000, 1.0).name('zOffset');
+        gui.add(mesh.position, 'x', -1000, 1000, 1).name('Position X');
+        gui.add(mesh.position, 'y', -1000, 5000, 1).name('Position Y');
+        gui.add(mesh.position, 'z', -1000, 10000, 1).name('Position Z');
+        gui.add(mesh.rotation, 'x', 4, 6, 0.1).name('Rotation X');
+
+        const fpsDisplay = { fps: 0 };
+        gui.add(fpsDisplay, 'fps').listen().name('FPS');
+
+        video.play();
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        controller1 = renderer.xr.getController(0);
+        scene.add(controller1);
+
+        controller2 = renderer.xr.getController(1);
+        scene.add(controller2);
+
+        const controllerModelFactory = new XRControllerModelFactory();
+
+        controllerGrip1 = renderer.xr.getControllerGrip(0);
+        controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+        scene.add(controllerGrip1);
+
+        controllerGrip2 = renderer.xr.getControllerGrip(1);
+        controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+        scene.add(controllerGrip2);
+
+        window.addEventListener('resize', onWindowResize);
+        document.addEventListener('mousemove', onDocumentMouseMove);
+
+        function animate(time) {
+            if (!renderer.xr.isPresenting) {
+                const damping = 0.05;
+                camera.position.x += (mouse.x * 8 - camera.position.x) * damping;
+                camera.position.y += (-mouse.y * 8 - camera.position.y) * damping;
+                camera.lookAt(center);
+            }
+
+            renderer.render(scene, camera);
+
+            frameCounter++;
+            if (time - lastTime > 1000) {
+                fpsDisplay.fps = Math.round(frameCounter * 1000 / (time - lastTime));
+                frameCounter = 0;
+                lastTime = time;
+            }
+        }
+
+        renderer.setAnimationLoop(animate);
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function onDocumentMouseMove(event) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+</script>
+
+</body>
+</html>
