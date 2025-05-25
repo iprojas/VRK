@@ -49,6 +49,8 @@
     }
 </script>
 
+<button id="nextDemoButton" style="position: fixed; top: 10px; right: 10px; z-index: 1000; padding: 10px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">Next Demo</button>
+
 <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.143/build/three.module.js';
     import { GUI } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/libs/lil-gui.module.min.js';
@@ -151,5 +153,26 @@
     renderer.setAnimationLoop(animate);
 </script>
 
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const demoPages = ["index.html", "a.html", "b.html", "c.html"];
+    const currentPage = window.location.pathname.split('/').pop() || "index.html"; // Handle root path as index.html
+    const nextDemoButton = document.getElementById('nextDemoButton');
+
+    if (nextDemoButton) {
+      nextDemoButton.addEventListener('click', function() {
+        let currentIndex = demoPages.indexOf(currentPage);
+        if (currentIndex === -1 && currentPage === "") { // Default to index.html if path is empty
+            currentIndex = 0;
+        }
+        
+        let nextIndex = (currentIndex + 1) % demoPages.length;
+        window.location.href = demoPages[nextIndex];
+      });
+    } else {
+      console.error("Next Demo button not found.");
+    }
+  });
+</script>
 </body>
 </html>
