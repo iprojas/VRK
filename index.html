@@ -8,17 +8,11 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <main id="viewport" aria-label="Interactive Kinect point-cloud demo"></main>
+    <main id="viewport" tabindex="-1" aria-label="Interactive Kinect point-cloud demo"></main>
     <p id="status" role="status" aria-live="polite">Loading depth video…</p>
-    <button
-        id="controls-toggle"
-        type="button"
-        aria-controls="settings-panel"
-        aria-expanded="false"
-    >Show settings (Space)</button>
 
     <video id="video" loop muted playsinline preload="metadata" hidden>
-        <source src="assets/videos/2-optimized.mp4" type="video/mp4">
+        <source src="assets/videos/2-optimized-trimmed.mp4" type="video/mp4">
     </video>
 
     <script id="vertex-shader" type="x-shader/x-vertex">
@@ -127,7 +121,7 @@
         const center = new THREE.Vector3(0, 0, 0);
         const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
         const status = document.querySelector('#status');
-        const controlsToggle = document.querySelector('#controls-toggle');
+        const viewport = document.querySelector('#viewport');
         const video = document.querySelector('#video');
         const settings = {
             quality: 'Medium',
@@ -200,7 +194,6 @@
             window.addEventListener('keydown', onKeyDown);
             document.addEventListener('visibilitychange', onVisibilityChange);
             reducedMotion.addEventListener('change', requestRender);
-            controlsToggle.addEventListener('click', toggleControls);
             video.addEventListener('playing', () => {
                 status.textContent = '';
                 status.hidden = true;
@@ -323,13 +316,9 @@
             }
 
             controlsGui.domElement.setAttribute('aria-hidden', String(!controlsVisible));
-            controlsToggle.setAttribute('aria-expanded', String(controlsVisible));
-            controlsToggle.textContent = controlsVisible
-                ? 'Hide settings (Space)'
-                : 'Show settings (Space)';
 
             if (!controlsVisible && focusWasInside) {
-                controlsToggle.focus();
+                viewport.focus({ preventScroll: true });
             }
 
             requestRender();

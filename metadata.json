@@ -1,7 +1,7 @@
 {
   "title": "Kinect Point Cloud — Clipping Demo",
   "slug": "kinect-point-cloud-clipping",
-  "version": "1.8.0",
+  "version": "1.10.0",
   "published": "2026-08-07",
   "language": "en",
   "type": "interactive-webgl-demo",
@@ -32,18 +32,19 @@
     "Settings hidden by default with Space-key toggle"
   ],
   "video": {
-    "file": "assets/videos/2-optimized.mp4",
+    "file": "assets/videos/2-optimized-trimmed.mp4",
     "width": 640,
     "height": 480,
     "frameRate": 30,
-    "durationSeconds": 453.233333,
-    "sizeBytes": 21301697,
-    "sha256": "9f434f7d08ed04af23750e3e9610e88065717d9649695f2378bbd2581bfb20b8",
+    "durationSeconds": 403.233333,
+    "sizeBytes": 17959761,
+    "sha256": "cc55591072935b0736a2c9f44fd6c9bd7f8b1a1d92f92c902e233a5c19a124cf",
     "codec": "H.264 High Profile",
     "muted": true,
     "loop": true,
     "audio": false,
-    "fastStart": true
+    "fastStart": true,
+    "sourceTrimStartSeconds": 50
   },
   "runtime": {
     "requiresBuild": false,

@@ -32,7 +32,7 @@ The legacy VR pages load Three.js support modules from jsDelivr and therefore re
 
 The home-page settings are hidden initially:
 
-- Press **Space** or select **Show settings (Space)** to reveal them.
+- Press **Space** to reveal them.
 - Press **Space** again or **Escape** to hide them.
 - **Performance** changes point-grid density and adaptive display resolution.
 - **Depth mapping** changes brightness-to-depth conversion, point size, and Z offset.
@@ -67,7 +67,8 @@ The home page uses a jerk-smoothed damped spring for mouse tracking and blends a
 
 | File | Used by |
 | --- | --- |
-| `assets/videos/2-optimized.mp4` | Home |
+| `assets/videos/2-optimized-trimmed.mp4` | Home; begins 50 seconds into the optimized source |
+| `assets/videos/2-optimized.mp4` | Preserved full-length optimized source |
 | `assets/videos/2.mp4` | Original |
 | `assets/videos/output.mp4` | Demo 1, A, and B |
 | `assets/videos/kinect2.mp4` | Demo C and Claude |
