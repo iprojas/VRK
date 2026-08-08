@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <title>Kinect</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="../../assets/styles/main.css">
+</head>
+<body>
+
+<video id="video" loop muted crossOrigin="anonymous" playsinline style="display:none">
+    <source src="../../assets/videos/2.mp4">
+</video>
+
+<script id="vs" type="x-shader/x-vertex">
+    uniform sampler2D map;
+    uniform float width;
+    uniform float height;
+    uniform float nearClipping, farClipping;
+    uniform float pointSize;
+    uniform float zOffset;
+    varying vec2 vUv;
+    const float XtoZ = 1.11146;
+    const float YtoZ = 0.83359;
+
+    void main() {
+        vUv = vec2( position.x / width, position.y / height );
+        vec4 color = texture2D( map, vUv );
+        float depth = ( color.r + color.g + color.b ) / 3.0;
+        float z = ( 1.0 - depth ) * (farClipping - nearClipping) + nearClipping;
+        vec4 pos = vec4(
+            ( position.x / width - 0.5 ) * z * XtoZ,
+            ( position.y / height - 0.5 ) * z * YtoZ,
+            - z + zOffset,
+            1.0
+        );
+        gl_PointSize = pointSize;
+        gl_Position = projectionMatrix * modelViewMatrix * pos;
+    }
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+    uniform sampler2D map;
+    varying vec2 vUv;
+    void main() {
+        vec4 color = texture2D(map, vUv);
+        gl_FragColor = vec4(color.r, color.g, color.b, 0.8);
+    }
+</script>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.143/build/three.module.js';
+import { GUI } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/libs/lil-gui.module.min.js';
+// import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/webxr/VRButton.js';
+
+let scene, camera, renderer;
+let geometry, mesh, material;
+let mouse, center;
+
+init();
+
+function init() {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    // camera
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
+    camera.position.set(0, 0, 500);
+
+    // scene & center
+    scene = new THREE.Scene();
+    center = new THREE.Vector3(0, 0, 0);
+
+    // video texture
+    const video = document.getElementById('video');
+    const texture = new THREE.VideoTexture(video);
+    texture.minFilter = THREE.NearestFilter;
+
+    // defaults
+    const width = 640, height = 480;
+    const nearClipping = 1, farClipping = 6000;
+
+    // geometry
+    geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array(width * height * 3);
+    for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
+        vertices[i]     =  j % width;
+        vertices[i + 1] = Math.floor(j / width);
+        // vertices[i+2] will be set in the shader
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+    // shader material
+    material = new THREE.ShaderMaterial({
+        uniforms: {
+            map:         { value: texture },
+            width:       { value: width },
+            height:      { value: height },
+            nearClipping:{ value: nearClipping },
+            farClipping: { value: farClipping },
+            pointSize:   { value: 1 },
+            zOffset:     { value: 3313 }
+        },
+        vertexShader:   document.getElementById('vs').textContent,
+        fragmentShader: document.getElementById('fs').textContent,
+        blending:       THREE.AdditiveBlending,
+        depthTest:      false,
+        depthWrite:     false,
+        transparent:    true
+    });
+
+    // points mesh
+    mesh = new THREE.Points(geometry, material);
+    // set the POSITION defaults
+    mesh.position.set(0, -800, -600);
+    // set the ROTATION default (in radians)
+    mesh.rotation.x = 5;
+    scene.add(mesh);
+
+    // GUI
+    const gui = new GUI();
+    gui.add(material.uniforms.nearClipping, 'value', 1,    2000, 1   ).name('nearClipping');
+    gui.add(material.uniforms.farClipping,  'value', 1,    6000, 1   ).name('farClipping');
+    gui.add(material.uniforms.pointSize,    'value', 1,    3,    0.25).name('pointSize');
+    gui.add(material.uniforms.zOffset,      'value', 0,    8000, 1   ).name('zOffset');
+
+    gui.add(mesh.position, 'x', -1000, 1000, 1  ).name('Position X');
+    gui.add(mesh.position, 'y', -1000, 5000, 1  ).name('Position Y');
+    gui.add(mesh.position, 'z', -1000, 10000,1  ).name('Position Z');
+    gui.add(mesh.rotation, 'x', 4,     6,    0.1).name('rotation X');
+
+    // play & render
+    video.play();
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    container.appendChild(renderer.domElement);
+    // document.body.appendChild(VRButton.createButton(renderer));
+
+    mouse = new THREE.Vector3();
+    document.addEventListener('mousemove', onDocumentMouseMove);
+    window.addEventListener('resize', onWindowResize);
+
+    renderer.setAnimationLoop(animate);
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function onDocumentMouseMove(event) {
+    mouse.x = (event.clientX - window.innerWidth  / 2) * 9;
+    mouse.y = (event.clientY - window.innerHeight / 2) * 9;
+}
+
+function animate() {
+    camera.position.x += (mouse.x - camera.position.x) * 0.09;
+    camera.position.y += (-mouse.y - camera.position.y) * 0.09;
+    camera.lookAt(center);
+    renderer.render(scene, camera);
+}
+</script>
+
+</body>
+</html>

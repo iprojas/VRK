@@ -1,0 +1,94 @@
+{
+  "title": "Kinect Point Cloud — Clipping Demo",
+  "slug": "kinect-point-cloud-clipping",
+  "version": "1.8.0",
+  "published": "2026-08-07",
+  "language": "en",
+  "type": "interactive-webgl-demo",
+  "entrypoint": "index.html",
+  "description": "An interactive Three.js point cloud generated from Kinect-style depth video, with close- and far-plane visibility clipping and live mesh controls.",
+  "keywords": [
+    "Kinect",
+    "depth video",
+    "point cloud",
+    "Three.js",
+    "WebGL",
+    "interactive"
+  ],
+  "features": [
+    "Opaque video-colored points",
+    "Close-plane clipping",
+    "Far-plane clipping",
+    "Rotatable far clipping plane",
+    "Selectable point-grid quality",
+    "Adaptive display resolution",
+    "Video-frame-synchronized rendering",
+    "Automatic pause when hidden",
+    "Depth mapping controls",
+    "Mesh position and X-rotation controls",
+    "Mouse-driven camera",
+    "Soft damped-spring camera movement",
+    "Continuous organic camera drift",
+    "Settings hidden by default with Space-key toggle"
+  ],
+  "video": {
+    "file": "assets/videos/2-optimized.mp4",
+    "width": 640,
+    "height": 480,
+    "frameRate": 30,
+    "durationSeconds": 453.233333,
+    "sizeBytes": 21301697,
+    "sha256": "9f434f7d08ed04af23750e3e9610e88065717d9649695f2378bbd2581bfb20b8",
+    "codec": "H.264 High Profile",
+    "muted": true,
+    "loop": true,
+    "audio": false,
+    "fastStart": true
+  },
+  "runtime": {
+    "requiresBuild": false,
+    "requiresNetwork": false,
+    "requiresWebXR": false,
+    "recommendedProtocol": "https",
+    "defaultPointCount": 76800,
+    "maximumPointCount": 307200,
+    "maximumDevicePixelRatio": 1.5,
+    "adaptiveResolution": true
+  },
+  "defaultClipping": {
+    "closePlane": 1,
+    "farPlane": 2313,
+    "farPlaneRotationDegrees": 26,
+    "farPlaneRotationAxis": "x"
+  },
+  "defaultMeshTransform": {
+    "position": {
+      "x": 0,
+      "y": -800,
+      "z": -275
+    },
+    "rotationXRadians": 5.2
+  },
+  "cameraMotion": {
+    "maximumVelocityUnitsPerSecond": 800,
+    "maximumAccelerationUnitsPerSecondSquared": 1000,
+    "springStrength": 4,
+    "damping": 5,
+    "accelerationResponse": 2.5,
+    "speedLimitLookaheadSeconds": 0.4,
+    "controller": "jerk-smoothed damped spring",
+    "frameRateIndependent": true,
+    "organicDrift": {
+      "widthInputPixels": 200,
+      "heightInputPixels": 120,
+      "inputPixelToSceneUnitScale": 9,
+      "continuous": true,
+      "blendedIntoMouseTarget": true
+    },
+    "disabledWhenReducedMotionIsRequested": true
+  },
+  "dependencies": {
+    "three": "0.143.0",
+    "lil-gui": "0.17.0"
+  }
+}

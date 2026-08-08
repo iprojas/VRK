@@ -1,168 +1,617 @@
-<!DOCTYPE html>
-<html lang="es">
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Kinect</title>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-    <link type="text/css" rel="stylesheet" href="main.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Interactive Kinect depth-video point cloud rendered with Three.js.">
+    <title>Kinect Point Cloud — Clipping Demo</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <main id="viewport" aria-label="Interactive Kinect point-cloud demo"></main>
+    <p id="status" role="status" aria-live="polite">Loading depth video…</p>
+    <button
+        id="controls-toggle"
+        type="button"
+        aria-controls="settings-panel"
+        aria-expanded="false"
+    >Show settings (Space)</button>
 
-<video id="video" loop muted crossOrigin="anonymous" playsinline style="display:none">
-    <source src="2.mp4">
-</video>
+    <video id="video" loop muted playsinline preload="metadata" hidden>
+        <source src="assets/videos/2-optimized.mp4" type="video/mp4">
+    </video>
 
-<script id="vs" type="x-shader/x-vertex">
-    uniform sampler2D map;
-    uniform float width;
-    uniform float height;
-    uniform float nearClipping, farClipping;
-    uniform float pointSize;
-    uniform float zOffset;
-    varying vec2 vUv;
-    const float XtoZ = 1.11146;
-    const float YtoZ = 0.83359;
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        uniform sampler2D map;
+        uniform float width;
+        uniform float height;
+        uniform float nearClipping;
+        uniform float farClipping;
+        uniform float pointSize;
+        uniform float zOffset;
+        uniform float closePlane;
+        uniform float farPlane;
+        uniform float farPlaneRotation;
 
-    void main() {
-        vUv = vec2( position.x / width, position.y / height );
-        vec4 color = texture2D( map, vUv );
-        float depth = ( color.r + color.g + color.b ) / 3.0;
-        float z = ( 1.0 - depth ) * (farClipping - nearClipping) + nearClipping;
-        vec4 pos = vec4(
-            ( position.x / width - 0.5 ) * z * XtoZ,
-            ( position.y / height - 0.5 ) * z * YtoZ,
-            - z + zOffset,
-            1.0
-        );
-        gl_PointSize = pointSize;
-        gl_Position = projectionMatrix * modelViewMatrix * pos;
-    }
-</script>
+        varying vec3 vColor;
 
-<script id="fs" type="x-shader/x-fragment">
-    uniform sampler2D map;
-    varying vec2 vUv;
-    void main() {
-        vec4 color = texture2D(map, vUv);
-        gl_FragColor = vec4(color.r, color.g, color.b, 0.8);
-    }
-</script>
+        const float XtoZ = 1.11146;
+        const float YtoZ = 0.83359;
 
-<script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.143/build/three.module.js';
-import { GUI } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/libs/lil-gui.module.min.js';
-// import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.143/examples/jsm/webxr/VRButton.js';
+        void main() {
+            vec2 videoUv = vec2(position.x / width, position.y / height);
+            vec4 color = texture2D(map, videoUv);
+            float depth = (color.r + color.g + color.b) / 3.0;
+            float z = (1.0 - depth) * (farClipping - nearClipping) + nearClipping;
+            vColor = color.rgb;
 
-let scene, camera, renderer;
-let geometry, mesh, material;
-let mouse, center;
+            float pointX = (position.x / width - 0.5) * z * XtoZ;
+            float pointY = (position.y / height - 0.5) * z * YtoZ;
+            float cutAngle = radians(farPlaneRotation);
+            float rotatedFarDepth = z * cos(cutAngle) - pointY * sin(cutAngle);
 
-init();
+            if (z < closePlane || rotatedFarDepth > farPlane) {
+                gl_PointSize = 0.0;
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                return;
+            }
 
-function init() {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
+            vec4 pointPosition = vec4(
+                pointX,
+                pointY,
+                -z + zOffset,
+                1.0
+            );
 
-    // camera
-    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
-    camera.position.set(0, 0, 500);
+            gl_PointSize = pointSize;
+            gl_Position = projectionMatrix * modelViewMatrix * pointPosition;
+        }
+    </script>
 
-    // scene & center
-    scene = new THREE.Scene();
-    center = new THREE.Vector3(0, 0, 0);
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        varying vec3 vColor;
 
-    // video texture
-    const video = document.getElementById('video');
-    const texture = new THREE.VideoTexture(video);
-    texture.minFilter = THREE.NearestFilter;
+        void main() {
+            gl_FragColor = vec4(vColor, 1.0);
+        }
+    </script>
 
-    // defaults
-    const width = 640, height = 480;
-    const nearClipping = 1, farClipping = 6000;
+    <script type="module">
+        import * as THREE from './assets/vendor/three.module.js';
+        import { GUI } from './assets/vendor/lil-gui.module.min.js';
 
-    // geometry
-    geometry = new THREE.BufferGeometry();
-    const vertices = new Float32Array(width * height * 3);
-    for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
-        vertices[i]     =  j % width;
-        vertices[i + 1] = Math.floor(j / width);
-        // vertices[i+2] will be set in the shader
-    }
-    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        const VIDEO_WIDTH = 640;
+        const VIDEO_HEIGHT = 480;
+        const QUALITY_STRIDES = {
+            Low: 4,
+            Medium: 2,
+            High: 1
+        };
+        const MIN_PIXEL_RATIO = 0.75;
+        const CAMERA_MAX_SPEED = 800;
+        const CAMERA_MAX_ACCELERATION = 1000;
+        const CAMERA_SPRING_STRENGTH = 4;
+        const CAMERA_DAMPING = 5;
+        const CAMERA_ACCELERATION_RESPONSE = 2.5;
+        const CAMERA_SPEED_FADE_START = 0.65;
+        const CAMERA_SPEED_LOOKAHEAD = 0.4;
+        const CAMERA_POSITION_EPSILON = 0.5;
+        const CAMERA_VELOCITY_EPSILON = 2;
+        const CAMERA_ACCELERATION_EPSILON = 2;
+        const POINTER_SCALE = 9;
+        const WOBBLE_WIDTH_PIXELS = 200;
+        const WOBBLE_HEIGHT_PIXELS = 120;
+        const MAX_FRAME_DELTA = 0.05;
 
-    // shader material
-    material = new THREE.ShaderMaterial({
-        uniforms: {
-            map:         { value: texture },
-            width:       { value: width },
-            height:      { value: height },
-            nearClipping:{ value: nearClipping },
-            farClipping: { value: farClipping },
-            pointSize:   { value: 1 },
-            zOffset:     { value: 3313 }
-        },
-        vertexShader:   document.getElementById('vs').textContent,
-        fragmentShader: document.getElementById('fs').textContent,
-        blending:       THREE.AdditiveBlending,
-        depthTest:      false,
-        depthWrite:     false,
-        transparent:    true
-    });
+        let camera;
+        let renderer;
+        let mesh;
+        let scene;
+        let controlsGui;
+        let controlsVisible = false;
+        let renderRequest = 0;
+        let renderRequested = false;
+        let fallbackFrameTimer = 0;
+        let wasPlayingBeforeHidden = false;
+        let performanceWindowStarted = performance.now();
+        let deliveredVideoFrames = 0;
+        let stablePerformanceWindows = 0;
+        let lastRenderTime = 0;
 
-    // points mesh
-    mesh = new THREE.Points(geometry, material);
-    // set the POSITION defaults
-    mesh.position.set(0, -800, -600);
-    // set the ROTATION default (in radians)
-    mesh.rotation.x = 5;
-    scene.add(mesh);
+        const pointer = new THREE.Vector2();
+        const cameraVelocity = new THREE.Vector2();
+        const cameraTarget = new THREE.Vector2();
+        const cameraTargetDelta = new THREE.Vector2();
+        const cameraAcceleration = new THREE.Vector2();
+        const desiredCameraAcceleration = new THREE.Vector2();
+        const center = new THREE.Vector3(0, 0, 0);
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const status = document.querySelector('#status');
+        const controlsToggle = document.querySelector('#controls-toggle');
+        const video = document.querySelector('#video');
+        const settings = {
+            quality: 'Medium',
+            adaptiveResolution: true,
+            maxPixelRatio: 1.5
+        };
+        const performanceState = {
+            points: 0,
+            pixelRatio: 1,
+            videoFps: 0
+        };
 
-    // GUI
-    const gui = new GUI();
-    gui.add(material.uniforms.nearClipping, 'value', 1,    2000, 1   ).name('nearClipping');
-    gui.add(material.uniforms.farClipping,  'value', 1,    6000, 1   ).name('farClipping');
-    gui.add(material.uniforms.pointSize,    'value', 1,    3,    0.25).name('pointSize');
-    gui.add(material.uniforms.zOffset,      'value', 0,    8000, 1   ).name('zOffset');
+        init();
 
-    gui.add(mesh.position, 'x', -1000, 1000, 1  ).name('Position X');
-    gui.add(mesh.position, 'y', -1000, 5000, 1  ).name('Position Y');
-    gui.add(mesh.position, 'z', -1000, 10000,1  ).name('Position Z');
-    gui.add(mesh.rotation, 'x', 4,     6,    0.1).name('rotation X');
+        function init() {
+            scene = new THREE.Scene();
 
-    // play & render
-    video.play();
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true;
-    container.appendChild(renderer.domElement);
-    // document.body.appendChild(VRButton.createButton(renderer));
+            camera = new THREE.PerspectiveCamera(
+                50,
+                window.innerWidth / window.innerHeight,
+                1,
+                10000
+            );
+            camera.position.set(0, 0, 500);
 
-    mouse = new THREE.Vector3();
-    document.addEventListener('mousemove', onDocumentMouseMove);
-    window.addEventListener('resize', onWindowResize);
+            const texture = new THREE.VideoTexture(video);
+            texture.minFilter = THREE.NearestFilter;
+            texture.magFilter = THREE.NearestFilter;
+            texture.generateMipmaps = false;
 
-    renderer.setAnimationLoop(animate);
-}
+            const geometry = createPointGrid(QUALITY_STRIDES[settings.quality]);
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    map: { value: texture },
+                    width: { value: VIDEO_WIDTH },
+                    height: { value: VIDEO_HEIGHT },
+                    nearClipping: { value: 1 },
+                    farClipping: { value: 6000 },
+                    pointSize: { value: 1 },
+                    zOffset: { value: 3313 },
+                    closePlane: { value: 1 },
+                    farPlane: { value: 2313 },
+                    farPlaneRotation: { value: 35 }
+                },
+                vertexShader: document.querySelector('#vertex-shader').textContent,
+                fragmentShader: document.querySelector('#fragment-shader').textContent,
+                blending: THREE.NormalBlending,
+                depthTest: false,
+                depthWrite: false,
+                transparent: false
+            });
 
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
+            mesh = new THREE.Points(geometry, material);
+            mesh.position.set(0, -800, -275);
+            mesh.rotation.x = 5.2;
+            scene.add(mesh);
 
-function onDocumentMouseMove(event) {
-    mouse.x = (event.clientX - window.innerWidth  / 2) * 9;
-    mouse.y = (event.clientY - window.innerHeight / 2) * 9;
-}
+            createControls(material);
 
-function animate() {
-    camera.position.x += (mouse.x - camera.position.x) * 0.09;
-    camera.position.y += (-mouse.y - camera.position.y) * 0.09;
-    camera.lookAt(center);
-    renderer.render(scene, camera);
-}
-</script>
+            renderer = new THREE.WebGLRenderer({
+                antialias: false,
+                powerPreference: 'high-performance'
+            });
+            setPixelRatio(getMaximumPixelRatio());
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.querySelector('#viewport').appendChild(renderer.domElement);
 
+            window.addEventListener('resize', onResize);
+            window.addEventListener('pointermove', onPointerMove, { passive: true });
+            window.addEventListener('keydown', onKeyDown);
+            document.addEventListener('visibilitychange', onVisibilityChange);
+            reducedMotion.addEventListener('change', requestRender);
+            controlsToggle.addEventListener('click', toggleControls);
+            video.addEventListener('playing', () => {
+                status.textContent = '';
+                status.hidden = true;
+                performanceWindowStarted = performance.now();
+                deliveredVideoFrames = 0;
+                requestRender();
+            });
+            video.addEventListener('error', () => {
+                status.textContent = 'The depth video could not be loaded.';
+                status.hidden = false;
+            });
+
+            startRenderScheduler();
+            startVideo();
+            requestRender();
+        }
+
+        function createPointGrid(stride) {
+            const geometry = new THREE.BufferGeometry();
+            const columns = Math.ceil(VIDEO_WIDTH / stride);
+            const rows = Math.ceil(VIDEO_HEIGHT / stride);
+            const vertices = new Float32Array(columns * rows * 3);
+            let index = 0;
+
+            for (let y = 0; y < VIDEO_HEIGHT; y += stride) {
+                for (let x = 0; x < VIDEO_WIDTH; x += stride) {
+                    vertices[index] = x;
+                    vertices[index + 1] = y;
+                    index += 3;
+                }
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            performanceState.points = columns * rows;
+            return geometry;
+        }
+
+        function updatePointGrid(quality) {
+            const oldGeometry = mesh.geometry;
+            mesh.geometry = createPointGrid(QUALITY_STRIDES[quality]);
+            oldGeometry.dispose();
+            requestRender();
+        }
+
+        function createControls(material) {
+            controlsGui = new GUI({ title: 'Point cloud controls' });
+            const gui = controlsGui;
+            gui.domElement.id = 'settings-panel';
+            gui.domElement.setAttribute('aria-label', 'Point cloud settings');
+
+            const performanceFolder = gui.addFolder('Performance');
+            performanceFolder
+                .add(settings, 'quality', Object.keys(QUALITY_STRIDES))
+                .name('Point quality')
+                .onChange(updatePointGrid);
+            performanceFolder
+                .add(settings, 'adaptiveResolution')
+                .name('Adaptive resolution');
+            performanceFolder
+                .add(settings, 'maxPixelRatio', MIN_PIXEL_RATIO, 1.5, 0.25)
+                .name('Maximum DPR')
+                .onChange(() => setPixelRatio(getMaximumPixelRatio()));
+            performanceFolder.add(performanceState, 'points').listen().disable().name('Point count');
+            performanceFolder.add(performanceState, 'pixelRatio').listen().disable().name('Current DPR');
+            performanceFolder.add(performanceState, 'videoFps').listen().disable().name('Video FPS');
+
+            const depthFolder = gui.addFolder('Depth mapping');
+            depthFolder.add(material.uniforms.nearClipping, 'value', 1, 2000, 1).name('Near depth');
+            depthFolder.add(material.uniforms.farClipping, 'value', 1, 6000, 1).name('Far depth');
+            depthFolder.add(material.uniforms.pointSize, 'value', 1, 3, 0.25).name('Point size');
+            depthFolder.add(material.uniforms.zOffset, 'value', 0, 8000, 1).name('Z offset');
+
+            const clippingFolder = gui.addFolder('Visibility clipping');
+            const closeControl = clippingFolder
+                .add(material.uniforms.closePlane, 'value', 1, 6000, 1)
+                .name('Close plane');
+            const farControl = clippingFolder
+                .add(material.uniforms.farPlane, 'value', 1, 6000, 1)
+                .name('Far plane');
+            clippingFolder
+                .add(material.uniforms.farPlaneRotation, 'value', -45, 45, 1)
+                .name('Far cut angle');
+
+            closeControl.onChange((value) => {
+                if (value > material.uniforms.farPlane.value) {
+                    material.uniforms.farPlane.value = value;
+                    farControl.updateDisplay();
+                }
+            });
+            farControl.onChange((value) => {
+                if (value < material.uniforms.closePlane.value) {
+                    material.uniforms.closePlane.value = value;
+                    closeControl.updateDisplay();
+                }
+            });
+
+            const transformFolder = gui.addFolder('Mesh transform');
+            transformFolder.add(mesh.position, 'x', -1000, 1000, 1).name('Position X');
+            transformFolder.add(mesh.position, 'y', -1000, 5000, 1).name('Position Y');
+            transformFolder.add(mesh.position, 'z', -1000, 10000, 1).name('Position Z');
+            transformFolder.add(mesh.rotation, 'x', 4, 6, 0.1).name('Rotation X');
+
+            gui.onChange(requestRender);
+            gui.hide();
+            gui.domElement.setAttribute('aria-hidden', 'true');
+        }
+
+        function toggleControls() {
+            setControlsVisible(!controlsVisible);
+        }
+
+        function setControlsVisible(visible) {
+            const focusWasInside = controlsGui.domElement.contains(document.activeElement);
+            controlsVisible = visible;
+
+            if (controlsVisible) {
+                controlsGui.show();
+            } else {
+                controlsGui.hide();
+            }
+
+            controlsGui.domElement.setAttribute('aria-hidden', String(!controlsVisible));
+            controlsToggle.setAttribute('aria-expanded', String(controlsVisible));
+            controlsToggle.textContent = controlsVisible
+                ? 'Hide settings (Space)'
+                : 'Show settings (Space)';
+
+            if (!controlsVisible && focusWasInside) {
+                controlsToggle.focus();
+            }
+
+            requestRender();
+        }
+
+        function onKeyDown(event) {
+            const targetIsInteractive = event.target instanceof Element && event.target.closest(
+                'input, textarea, select, button, a, [contenteditable="true"]'
+            );
+
+            if (event.code === 'Escape' && controlsVisible) {
+                event.preventDefault();
+                setControlsVisible(false);
+                return;
+            }
+
+            if (
+                event.code !== 'Space' ||
+                event.repeat ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                targetIsInteractive
+            ) {
+                return;
+            }
+
+            event.preventDefault();
+            toggleControls();
+        }
+
+        function startRenderScheduler() {
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                video.requestVideoFrameCallback(onVideoFrame);
+                return;
+            }
+
+            scheduleFallbackVideoFrame();
+        }
+
+        function onVideoFrame() {
+            deliveredVideoFrames++;
+            updateAdaptiveResolution();
+            requestRender();
+            video.requestVideoFrameCallback(onVideoFrame);
+        }
+
+        function scheduleFallbackVideoFrame() {
+            window.clearTimeout(fallbackFrameTimer);
+            fallbackFrameTimer = window.setTimeout(() => {
+                if (!document.hidden && !video.paused) {
+                    deliveredVideoFrames++;
+                    updateAdaptiveResolution();
+                    requestRender();
+                }
+                scheduleFallbackVideoFrame();
+            }, document.hidden ? 1000 : 1000 / 30);
+        }
+
+        function requestRender() {
+            if (document.hidden || renderRequested) {
+                return;
+            }
+
+            renderRequested = true;
+            renderRequest = window.requestAnimationFrame(renderFrame);
+        }
+
+        function renderFrame(time) {
+            renderRequested = false;
+
+            const deltaTime = lastRenderTime === 0
+                ? 1 / 60
+                : Math.min((time - lastRenderTime) / 1000, MAX_FRAME_DELTA);
+            lastRenderTime = time;
+
+            const cameraIsMoving = updateCameraMotion(deltaTime, time / 1000);
+            camera.lookAt(center);
+            renderer.render(scene, camera);
+
+            if (cameraIsMoving) {
+                requestRender();
+            }
+        }
+
+        function updateCameraMotion(deltaTime, elapsedTime) {
+            const motionEnabled = !reducedMotion.matches;
+            const wobbleX = motionEnabled
+                ? WOBBLE_WIDTH_PIXELS * POINTER_SCALE * 0.5 * (
+                    Math.sin(elapsedTime * 0.22) * 0.62 +
+                    Math.sin(elapsedTime * 0.13 + 1.7) * 0.38
+                )
+                : 0;
+            const wobbleY = motionEnabled
+                ? WOBBLE_HEIGHT_PIXELS * POINTER_SCALE * 0.5 * (
+                    Math.sin(elapsedTime * 0.17 + 0.9) * 0.55 +
+                    Math.cos(elapsedTime * 0.09 + 2.1) * 0.45
+                )
+                : 0;
+
+            // Mouse input and organic drift share one target, so the same spring
+            // blends both sources instead of layering a separate camera animation.
+            cameraTarget.set(
+                (motionEnabled ? pointer.x : 0) + wobbleX,
+                (motionEnabled ? -pointer.y : 0) + wobbleY
+            );
+
+            cameraTargetDelta.set(
+                cameraTarget.x - camera.position.x,
+                cameraTarget.y - camera.position.y
+            );
+
+            // A damped spring provides the target acceleration. Tanh saturation
+            // avoids a hard acceleration edge when the mouse target jumps.
+            desiredCameraAcceleration
+                .copy(cameraTargetDelta)
+                .multiplyScalar(CAMERA_SPRING_STRENGTH)
+                .addScaledVector(cameraVelocity, -CAMERA_DAMPING);
+
+            const requestedAcceleration = desiredCameraAcceleration.length();
+            if (requestedAcceleration > 0) {
+                const softenedAcceleration = CAMERA_MAX_ACCELERATION * Math.tanh(
+                    requestedAcceleration / CAMERA_MAX_ACCELERATION
+                );
+                desiredCameraAcceleration.multiplyScalar(
+                    softenedAcceleration / requestedAcceleration
+                );
+            }
+
+            const currentSpeed = cameraVelocity.length();
+            if (
+                currentSpeed > 0 &&
+                desiredCameraAcceleration.dot(cameraVelocity) > 0
+            ) {
+                const velocityDirectionX = cameraVelocity.x / currentSpeed;
+                const velocityDirectionY = cameraVelocity.y / currentSpeed;
+                const forwardAcceleration = Math.max(
+                    0,
+                    cameraAcceleration.x * velocityDirectionX +
+                    cameraAcceleration.y * velocityDirectionY
+                );
+                const projectedSpeed = currentSpeed +
+                    forwardAcceleration * CAMERA_SPEED_LOOKAHEAD;
+                const speedFade = 1 - THREE.MathUtils.smoothstep(
+                    projectedSpeed,
+                    CAMERA_MAX_SPEED * CAMERA_SPEED_FADE_START,
+                    CAMERA_MAX_SPEED
+                );
+                desiredCameraAcceleration.multiplyScalar(speedFade);
+            }
+
+            // Low-pass the acceleration itself. This limits jerk and removes the
+            // obvious instant switch between starting, cruising, and braking.
+            const accelerationBlend = 1 - Math.exp(
+                -CAMERA_ACCELERATION_RESPONSE * deltaTime
+            );
+            cameraAcceleration.lerp(desiredCameraAcceleration, accelerationBlend);
+
+            cameraVelocity.addScaledVector(cameraAcceleration, deltaTime);
+
+            // Safety cap. The smooth speed fade normally prevents reaching it.
+            if (cameraVelocity.length() > CAMERA_MAX_SPEED) {
+                cameraVelocity.setLength(CAMERA_MAX_SPEED);
+            }
+
+            camera.position.x += cameraVelocity.x * deltaTime;
+            camera.position.y += cameraVelocity.y * deltaTime;
+
+            const remainingDistance = cameraTargetDelta.length();
+
+            return motionEnabled ||
+                remainingDistance > CAMERA_POSITION_EPSILON ||
+                cameraVelocity.length() > CAMERA_VELOCITY_EPSILON ||
+                cameraAcceleration.length() > CAMERA_ACCELERATION_EPSILON;
+        }
+
+        function updateAdaptiveResolution() {
+            const now = performance.now();
+            const elapsed = now - performanceWindowStarted;
+            if (elapsed < 2000) {
+                return;
+            }
+
+            const fps = deliveredVideoFrames * 1000 / elapsed;
+            performanceState.videoFps = Math.round(fps);
+
+            if (settings.adaptiveResolution) {
+                const maximum = getMaximumPixelRatio();
+                if (fps < 24 && performanceState.pixelRatio > MIN_PIXEL_RATIO) {
+                    setPixelRatio(performanceState.pixelRatio - 0.25);
+                    stablePerformanceWindows = 0;
+                } else if (fps >= 28 && performanceState.pixelRatio < maximum) {
+                    stablePerformanceWindows++;
+                    if (stablePerformanceWindows >= 3) {
+                        setPixelRatio(performanceState.pixelRatio + 0.25);
+                        stablePerformanceWindows = 0;
+                    }
+                } else {
+                    stablePerformanceWindows = 0;
+                }
+            }
+
+            deliveredVideoFrames = 0;
+            performanceWindowStarted = now;
+        }
+
+        function getMaximumPixelRatio() {
+            return Math.max(
+                MIN_PIXEL_RATIO,
+                Math.min(window.devicePixelRatio || 1, settings.maxPixelRatio)
+            );
+        }
+
+        function setPixelRatio(value) {
+            const nextValue = Math.max(
+                MIN_PIXEL_RATIO,
+                Math.min(value, getMaximumPixelRatio())
+            );
+            performanceState.pixelRatio = Math.round(nextValue * 100) / 100;
+
+            if (renderer) {
+                renderer.setPixelRatio(performanceState.pixelRatio);
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                requestRender();
+            }
+        }
+
+        async function startVideo() {
+            try {
+                await video.play();
+            } catch {
+                status.textContent = 'Click anywhere to start the depth video.';
+                status.hidden = false;
+                window.addEventListener('pointerdown', retryVideo, { once: true });
+            }
+        }
+
+        async function retryVideo() {
+            try {
+                await video.play();
+            } catch {
+                status.textContent = 'Video playback is blocked by this browser.';
+            }
+        }
+
+        function onPointerMove(event) {
+            pointer.x = (event.clientX - window.innerWidth / 2) * POINTER_SCALE;
+            pointer.y = (event.clientY - window.innerHeight / 2) * POINTER_SCALE;
+            requestRender();
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            setPixelRatio(Math.min(performanceState.pixelRatio, getMaximumPixelRatio()));
+            requestRender();
+        }
+
+        async function onVisibilityChange() {
+            if (document.hidden) {
+                wasPlayingBeforeHidden = !video.paused;
+                video.pause();
+                window.cancelAnimationFrame(renderRequest);
+                renderRequested = false;
+                lastRenderTime = 0;
+                return;
+            }
+
+            performanceWindowStarted = performance.now();
+            deliveredVideoFrames = 0;
+            if (wasPlayingBeforeHidden) {
+                try {
+                    await video.play();
+                } catch {
+                    status.textContent = 'Click anywhere to resume the depth video.';
+                    status.hidden = false;
+                    window.addEventListener('pointerdown', retryVideo, { once: true });
+                }
+            }
+            requestRender();
+        }
+    </script>
 </body>
 </html>
