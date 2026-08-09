@@ -27,15 +27,14 @@
         uniform float closePlane;
         uniform float farPlane;
         uniform float farPlaneRotation;
+        uniform float topCrop;
 
         varying vec3 vColor;
 
         const float XtoZ = 1.11146;
         const float YtoZ = 0.83359;
-        const float NOISY_TOP_ROWS = 5.0;
-
         void main() {
-            if (position.y >= height - NOISY_TOP_ROWS) {
+            if (position.y >= height - topCrop) {
                 gl_PointSize = 0.0;
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
                 return;
@@ -107,7 +106,7 @@
             bloom += brightSample(vec2(2.0, -2.0));
             bloom += brightSample(vec2(-2.0, 2.0));
             bloom += brightSample(vec2(2.0, 2.0));
-            bloom *= bloomStrength / 8.0;
+            bloom *= vec3(0.55, 0.82, 1.4) * bloomStrength / 8.0;
 
             float light = luminance(base);
             vec3 coolGrade = vec3(light * 0.92, light * 0.97, light * 1.08);
@@ -186,7 +185,7 @@
             quality: 'Medium',
             adaptiveResolution: true,
             maxPixelRatio: 1.5,
-            bloomStrength: 0.16,
+            bloomStrength: 0.32,
             blueHue: 0.04
         };
         const performanceState = {
@@ -225,7 +224,8 @@
                     zOffset: { value: 3313 },
                     closePlane: { value: 1 },
                     farPlane: { value: 2200 },
-                    farPlaneRotation: { value: 26 }
+                    farPlaneRotation: { value: 26 },
+                    topCrop: { value: 10 }
                 },
                 vertexShader: document.querySelector('#vertex-shader').textContent,
                 fragmentShader: document.querySelector('#fragment-shader').textContent,
@@ -370,7 +370,7 @@
 
             const effectsFolder = gui.addFolder('Image effects');
             effectsFolder
-                .add(settings, 'bloomStrength', 0, 0.4, 0.01)
+                .add(settings, 'bloomStrength', 0, 0.75, 0.01)
                 .name('Bloom')
                 .onChange((value) => {
                     postMaterial.uniforms.bloomStrength.value = value;
@@ -398,6 +398,9 @@
             clippingFolder
                 .add(material.uniforms.farPlaneRotation, 'value', -45, 45, 1)
                 .name('Far cut angle');
+            clippingFolder
+                .add(material.uniforms.topCrop, 'value', 0, 40, 1)
+                .name('Top crop (px)');
 
             closeControl.onChange((value) => {
                 if (value > material.uniforms.farPlane.value) {

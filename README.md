@@ -38,12 +38,12 @@ The home-page settings are hidden initially:
 - **Performance** changes point-grid density and adaptive display resolution.
 - **Image effects** tunes the lightweight bloom pass and subtle blue grade.
 - **Depth mapping** changes brightness-to-depth conversion, point size, and Z offset.
-- **Visibility clipping** controls the close plane, far plane, and far-cut angle.
+- **Visibility clipping** controls the close plane, far plane, far-cut angle, and top crop in source-video pixels.
 - **Mesh transform** controls mesh position and X-axis rotation.
 
 The home page uses a jerk-smoothed damped spring for mouse tracking and blends a slow `200 × 120 px` organic drift into the same camera target. Drift and mouse parallax are disabled when the operating system requests reduced motion.
 
-The point-cloud shader masks the top five video rows to remove source noise without modifying the video asset.
+The point-cloud shader masks 10 source-video pixels at the top by default to remove source noise without modifying the video asset. Tune **Top crop (px)** under **Visibility clipping**.
 
 The home page uses a single fullscreen post-processing pass for a restrained bloom and cool-blue grade. Timeline scrubbing samples shuffled regions across the entire video, holds each sought frame while the key is down, and resumes normal playback immediately on release.
 
