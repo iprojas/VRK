@@ -34,12 +34,15 @@ The home-page settings are hidden initially:
 
 - Press **Space** to reveal them.
 - Press **Space** again or **Escape** to hide them.
+- Press **<** or **,** to go back 10 seconds; press **>** or **.** to skip forward 10 seconds.
 - **Performance** changes point-grid density and adaptive display resolution.
 - **Depth mapping** changes brightness-to-depth conversion, point size, and Z offset.
 - **Visibility clipping** controls the close plane, far plane, and far-cut angle.
 - **Mesh transform** controls mesh position and X-axis rotation.
 
 The home page uses a jerk-smoothed damped spring for mouse tracking and blends a slow `200 × 120 px` organic drift into the same camera target. Drift and mouse parallax are disabled when the operating system requests reduced motion.
+
+The point-cloud shader masks the top five video rows to remove source noise without modifying the video asset.
 
 ## Project structure
 

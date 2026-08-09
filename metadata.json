@@ -1,8 +1,8 @@
 {
   "title": "Kinect Point Cloud — Clipping Demo",
   "slug": "kinect-point-cloud-clipping",
-  "version": "1.10.0",
-  "published": "2026-08-07",
+  "version": "1.11.0",
+  "published": "2026-08-08",
   "language": "en",
   "type": "interactive-webgl-demo",
   "entrypoint": "index.html",
@@ -29,7 +29,9 @@
     "Mouse-driven camera",
     "Soft damped-spring camera movement",
     "Continuous organic camera drift",
-    "Settings hidden by default with Space-key toggle"
+    "Settings hidden by default with Space-key toggle",
+    "Ten-second keyboard seeking with the comma and period keys",
+    "Top five noisy source rows masked in the point-cloud shader"
   ],
   "video": {
     "file": "assets/videos/2-optimized-trimmed.mp4",
@@ -44,7 +46,8 @@
     "loop": true,
     "audio": false,
     "fastStart": true,
-    "sourceTrimStartSeconds": 50
+    "sourceTrimStartSeconds": 50,
+    "maskedTopRows": 5
   },
   "runtime": {
     "requiresBuild": false,
@@ -58,7 +61,7 @@
   },
   "defaultClipping": {
     "closePlane": 1,
-    "farPlane": 2313,
+    "farPlane": 2200,
     "farPlaneRotationDegrees": 26,
     "farPlaneRotationAxis": "x"
   },
@@ -87,6 +90,14 @@
       "blendedIntoMouseTarget": true
     },
     "disabledWhenReducedMotionIsRequested": true
+  },
+  "keyboardShortcuts": {
+    "toggleSettings": "Space",
+    "hideSettings": "Escape",
+    "seekBackwardSeconds": 10,
+    "seekBackwardKeys": ["<", ","],
+    "seekForwardSeconds": 10,
+    "seekForwardKeys": [">", "."]
   },
   "dependencies": {
     "three": "0.143.0",

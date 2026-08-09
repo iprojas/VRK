@@ -10,6 +10,7 @@
 <body>
     <main id="viewport" tabindex="-1" aria-label="Interactive Kinect point-cloud demo"></main>
     <p id="status" role="status" aria-live="polite">Loading depth video…</p>
+    <p id="transport-status" class="sr-only" role="status" aria-live="polite"></p>
 
     <video id="video" loop muted playsinline preload="metadata" hidden>
         <source src="assets/videos/2-optimized-trimmed.mp4" type="video/mp4">
@@ -31,8 +32,15 @@
 
         const float XtoZ = 1.11146;
         const float YtoZ = 0.83359;
+        const float NOISY_TOP_ROWS = 5.0;
 
         void main() {
+            if (position.y >= height - NOISY_TOP_ROWS) {
+                gl_PointSize = 0.0;
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                return;
+            }
+
             vec2 videoUv = vec2(position.x / width, position.y / height);
             vec4 color = texture2D(map, videoUv);
             float depth = (color.r + color.g + color.b) / 3.0;
@@ -96,6 +104,7 @@
         const WOBBLE_WIDTH_PIXELS = 200;
         const WOBBLE_HEIGHT_PIXELS = 120;
         const MAX_FRAME_DELTA = 0.05;
+        const VIDEO_SEEK_SECONDS = 10;
 
         let camera;
         let renderer;
@@ -121,6 +130,7 @@
         const center = new THREE.Vector3(0, 0, 0);
         const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
         const status = document.querySelector('#status');
+        const transportStatus = document.querySelector('#transport-status');
         const viewport = document.querySelector('#viewport');
         const video = document.querySelector('#video');
         const settings = {
@@ -163,8 +173,8 @@
                     pointSize: { value: 1 },
                     zOffset: { value: 3313 },
                     closePlane: { value: 1 },
-                    farPlane: { value: 2313 },
-                    farPlaneRotation: { value: 35 }
+                    farPlane: { value: 2200 },
+                    farPlaneRotation: { value: 26 }
                 },
                 vertexShader: document.querySelector('#vertex-shader').textContent,
                 fragmentShader: document.querySelector('#fragment-shader').textContent,
@@ -335,6 +345,25 @@
                 return;
             }
 
+            const seekDirection = event.code === 'Comma' || event.key === '<'
+                ? -1
+                : event.code === 'Period' || event.key === '>'
+                    ? 1
+                    : 0;
+
+            if (
+                seekDirection !== 0 &&
+                !event.repeat &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !targetIsInteractive
+            ) {
+                event.preventDefault();
+                seekVideoBy(seekDirection * VIDEO_SEEK_SECONDS);
+                return;
+            }
+
             if (
                 event.code !== 'Space' ||
                 event.repeat ||
@@ -348,6 +377,30 @@
 
             event.preventDefault();
             toggleControls();
+        }
+
+        function seekVideoBy(offsetSeconds) {
+            if (!Number.isFinite(video.duration) || video.duration <= 0) {
+                return;
+            }
+
+            const maximumTime = Math.max(0, video.duration - 0.001);
+            const nextTime = THREE.MathUtils.clamp(
+                video.currentTime + offsetSeconds,
+                0,
+                maximumTime
+            );
+
+            video.currentTime = nextTime;
+            transportStatus.textContent = `${offsetSeconds < 0 ? 'Back' : 'Forward'} 10 seconds. ${formatVideoTime(nextTime)}.`;
+            requestRender();
+        }
+
+        function formatVideoTime(timeSeconds) {
+            const totalSeconds = Math.floor(timeSeconds);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = String(totalSeconds % 60).padStart(2, '0');
+            return `${minutes}:${seconds}`;
         }
 
         function startRenderScheduler() {
