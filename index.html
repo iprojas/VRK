@@ -78,6 +78,45 @@
         }
     </script>
 
+    <script id="post-fragment-shader" type="x-shader/x-fragment">
+        uniform sampler2D sceneTexture;
+        uniform vec2 resolution;
+        uniform float bloomStrength;
+        uniform float blueHue;
+
+        varying vec2 vUv;
+
+        float luminance(vec3 color) {
+            return dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        vec3 brightSample(vec2 offset) {
+            vec3 color = texture2D(sceneTexture, vUv + offset / resolution).rgb;
+            return color * smoothstep(0.48, 0.92, luminance(color));
+        }
+
+        void main() {
+            vec3 base = texture2D(sceneTexture, vUv).rgb;
+            vec3 bloom = vec3(0.0);
+
+            bloom += brightSample(vec2(-3.0, 0.0));
+            bloom += brightSample(vec2(3.0, 0.0));
+            bloom += brightSample(vec2(0.0, -3.0));
+            bloom += brightSample(vec2(0.0, 3.0));
+            bloom += brightSample(vec2(-2.0, -2.0));
+            bloom += brightSample(vec2(2.0, -2.0));
+            bloom += brightSample(vec2(-2.0, 2.0));
+            bloom += brightSample(vec2(2.0, 2.0));
+            bloom *= bloomStrength / 8.0;
+
+            float light = luminance(base);
+            vec3 coolGrade = vec3(light * 0.92, light * 0.97, light * 1.08);
+            vec3 graded = mix(base, coolGrade, blueHue);
+
+            gl_FragColor = vec4(graded + bloom, 1.0);
+        }
+    </script>
+
     <script type="module">
         import * as THREE from './assets/vendor/three.module.js';
         import { GUI } from './assets/vendor/lil-gui.module.min.js';
@@ -104,10 +143,15 @@
         const WOBBLE_WIDTH_PIXELS = 200;
         const WOBBLE_HEIGHT_PIXELS = 120;
         const MAX_FRAME_DELTA = 0.05;
-        const VIDEO_SEEK_SECONDS = 10;
+        const TIMELINE_SCRUB_INTERVAL = 1000;
+        const TIMELINE_SCRUB_CODES = new Set(['Comma', 'Period']);
 
         let camera;
         let renderer;
+        let sceneRenderTarget;
+        let postScene;
+        let postCamera;
+        let postMaterial;
         let mesh;
         let scene;
         let controlsGui;
@@ -120,6 +164,9 @@
         let deliveredVideoFrames = 0;
         let stablePerformanceWindows = 0;
         let lastRenderTime = 0;
+        let timelineScrubTimer = 0;
+        let timelineScrubActive = false;
+        let timelineMomentDeck = [];
 
         const pointer = new THREE.Vector2();
         const cameraVelocity = new THREE.Vector2();
@@ -128,6 +175,8 @@
         const cameraAcceleration = new THREE.Vector2();
         const desiredCameraAcceleration = new THREE.Vector2();
         const center = new THREE.Vector3(0, 0, 0);
+        const postResolution = new THREE.Vector2();
+        const heldTimelineKeys = new Set();
         const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
         const status = document.querySelector('#status');
         const transportStatus = document.querySelector('#transport-status');
@@ -136,7 +185,9 @@
         const settings = {
             quality: 'Medium',
             adaptiveResolution: true,
-            maxPixelRatio: 1.5
+            maxPixelRatio: 1.5,
+            bloomStrength: 0.16,
+            blueHue: 0.04
         };
         const performanceState = {
             points: 0,
@@ -189,8 +240,6 @@
             mesh.rotation.x = 5.2;
             scene.add(mesh);
 
-            createControls(material);
-
             renderer = new THREE.WebGLRenderer({
                 antialias: false,
                 powerPreference: 'high-performance'
@@ -199,9 +248,14 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.querySelector('#viewport').appendChild(renderer.domElement);
 
+            createPostProcessing();
+            createControls(material);
+
             window.addEventListener('resize', onResize);
             window.addEventListener('pointermove', onPointerMove, { passive: true });
             window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+            window.addEventListener('blur', onWindowBlur);
             document.addEventListener('visibilitychange', onVisibilityChange);
             reducedMotion.addEventListener('change', requestRender);
             video.addEventListener('playing', () => {
@@ -215,10 +269,54 @@
                 status.textContent = 'The depth video could not be loaded.';
                 status.hidden = false;
             });
+            video.addEventListener('seeked', requestRender);
 
             startRenderScheduler();
             startVideo();
             requestRender();
+        }
+
+        function createPostProcessing() {
+            sceneRenderTarget = new THREE.WebGLRenderTarget(1, 1, {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                depthBuffer: true,
+                stencilBuffer: false
+            });
+            sceneRenderTarget.texture.generateMipmaps = false;
+
+            postMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    sceneTexture: { value: sceneRenderTarget.texture },
+                    resolution: { value: postResolution },
+                    bloomStrength: { value: settings.bloomStrength },
+                    blueHue: { value: settings.blueHue }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+
+                    void main() {
+                        vUv = uv;
+                        gl_Position = vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: document.querySelector('#post-fragment-shader').textContent,
+                depthTest: false,
+                depthWrite: false
+            });
+
+            postScene = new THREE.Scene();
+            postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial));
+            resizePostProcessing();
+        }
+
+        function resizePostProcessing() {
+            renderer.getDrawingBufferSize(postResolution);
+            sceneRenderTarget.setSize(
+                Math.max(1, postResolution.x),
+                Math.max(1, postResolution.y)
+            );
         }
 
         function createPointGrid(stride) {
@@ -269,6 +367,20 @@
             performanceFolder.add(performanceState, 'points').listen().disable().name('Point count');
             performanceFolder.add(performanceState, 'pixelRatio').listen().disable().name('Current DPR');
             performanceFolder.add(performanceState, 'videoFps').listen().disable().name('Video FPS');
+
+            const effectsFolder = gui.addFolder('Image effects');
+            effectsFolder
+                .add(settings, 'bloomStrength', 0, 0.4, 0.01)
+                .name('Bloom')
+                .onChange((value) => {
+                    postMaterial.uniforms.bloomStrength.value = value;
+                });
+            effectsFolder
+                .add(settings, 'blueHue', 0, 0.12, 0.005)
+                .name('Blue hue')
+                .onChange((value) => {
+                    postMaterial.uniforms.blueHue.value = value;
+                });
 
             const depthFolder = gui.addFolder('Depth mapping');
             depthFolder.add(material.uniforms.nearClipping, 'value', 1, 2000, 1).name('Near depth');
@@ -345,22 +457,17 @@
                 return;
             }
 
-            const seekDirection = event.code === 'Comma' || event.key === '<'
-                ? -1
-                : event.code === 'Period' || event.key === '>'
-                    ? 1
-                    : 0;
-
             if (
-                seekDirection !== 0 &&
-                !event.repeat &&
+                TIMELINE_SCRUB_CODES.has(event.code) &&
                 !event.altKey &&
                 !event.ctrlKey &&
                 !event.metaKey &&
                 !targetIsInteractive
             ) {
                 event.preventDefault();
-                seekVideoBy(seekDirection * VIDEO_SEEK_SECONDS);
+                if (!event.repeat) {
+                    beginTimelineScrub(event.code);
+                }
                 return;
             }
 
@@ -379,21 +486,108 @@
             toggleControls();
         }
 
-        function seekVideoBy(offsetSeconds) {
+        function onKeyUp(event) {
+            if (!heldTimelineKeys.has(event.code)) {
+                return;
+            }
+
+            event.preventDefault();
+            heldTimelineKeys.delete(event.code);
+
+            if (heldTimelineKeys.size === 0) {
+                finishTimelineScrub();
+            }
+        }
+
+        function onWindowBlur() {
+            if (timelineScrubActive && !document.hidden) {
+                finishTimelineScrub();
+            }
+        }
+
+        function beginTimelineScrub(keyCode) {
+            heldTimelineKeys.add(keyCode);
+
+            if (timelineScrubActive) {
+                return;
+            }
+
+            timelineScrubActive = true;
+            timelineMomentDeck = [];
+            video.pause();
+            transportStatus.textContent = 'Timeline scrubbing started. Hold for one paused moment per second.';
+            showNextTimelineMoment();
+            timelineScrubTimer = window.setInterval(
+                showNextTimelineMoment,
+                TIMELINE_SCRUB_INTERVAL
+            );
+        }
+
+        function finishTimelineScrub({ resume = true } = {}) {
+            if (!timelineScrubActive) {
+                return;
+            }
+
+            window.clearInterval(timelineScrubTimer);
+            timelineScrubTimer = 0;
+            timelineScrubActive = false;
+            heldTimelineKeys.clear();
+            timelineMomentDeck = [];
+
+            if (resume) {
+                video.play().catch(() => {
+                    status.textContent = 'Click anywhere to resume the depth video.';
+                    status.hidden = false;
+                    window.addEventListener('pointerdown', retryVideo, { once: true });
+                });
+                transportStatus.textContent = `Playback resumed at ${formatVideoTime(video.currentTime)}.`;
+            }
+        }
+
+        function showNextTimelineMoment() {
             if (!Number.isFinite(video.duration) || video.duration <= 0) {
                 return;
             }
 
             const maximumTime = Math.max(0, video.duration - 0.001);
-            const nextTime = THREE.MathUtils.clamp(
-                video.currentTime + offsetSeconds,
-                0,
-                maximumTime
-            );
+            const nextTime = Math.min(getNextTimelineMoment(), maximumTime);
 
             video.currentTime = nextTime;
-            transportStatus.textContent = `${offsetSeconds < 0 ? 'Back' : 'Forward'} 10 seconds. ${formatVideoTime(nextTime)}.`;
+            transportStatus.textContent = `Paused timeline moment at ${formatVideoTime(nextTime)}.`;
             requestRender();
+        }
+
+        function getNextTimelineMoment() {
+            const segmentCount = Math.max(4, Math.min(12, Math.floor(video.duration)));
+            const minimumJump = Math.min(8, Math.max(2, video.duration * 0.08));
+            let fallbackTime = 0;
+
+            if (timelineMomentDeck.length === 0) {
+                timelineMomentDeck = Array.from(
+                    { length: segmentCount },
+                    (_, index) => index
+                );
+
+                for (let index = timelineMomentDeck.length - 1; index > 0; index--) {
+                    const randomIndex = Math.floor(Math.random() * (index + 1));
+                    [timelineMomentDeck[index], timelineMomentDeck[randomIndex]] =
+                        [timelineMomentDeck[randomIndex], timelineMomentDeck[index]];
+                }
+            }
+
+            while (timelineMomentDeck.length > 0) {
+                const segment = timelineMomentDeck.pop();
+                const segmentStart = segment / segmentCount * video.duration;
+                const segmentLength = video.duration / segmentCount;
+                const candidate = segmentStart + segmentLength * (0.15 + Math.random() * 0.7);
+                fallbackTime = candidate;
+
+                if (Math.abs(candidate - video.currentTime) >= minimumJump) {
+                    return candidate;
+                }
+            }
+
+            return fallbackTime;
         }
 
         function formatVideoTime(timeSeconds) {
@@ -450,7 +644,10 @@
 
             const cameraIsMoving = updateCameraMotion(deltaTime, time / 1000);
             camera.lookAt(center);
+            renderer.setRenderTarget(sceneRenderTarget);
             renderer.render(scene, camera);
+            renderer.setRenderTarget(null);
+            renderer.render(postScene, postCamera);
 
             if (cameraIsMoving) {
                 requestRender();
@@ -595,6 +792,9 @@
             if (renderer) {
                 renderer.setPixelRatio(performanceState.pixelRatio);
                 renderer.setSize(window.innerWidth, window.innerHeight);
+                if (sceneRenderTarget) {
+                    resizePostProcessing();
+                }
                 requestRender();
             }
         }
@@ -633,7 +833,8 @@
 
         async function onVisibilityChange() {
             if (document.hidden) {
-                wasPlayingBeforeHidden = !video.paused;
+                wasPlayingBeforeHidden = timelineScrubActive || !video.paused;
+                finishTimelineScrub({ resume: false });
                 video.pause();
                 window.cancelAnimationFrame(renderRequest);
                 renderRequested = false;

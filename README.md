@@ -34,8 +34,9 @@ The home-page settings are hidden initially:
 
 - Press **Space** to reveal them.
 - Press **Space** again or **Escape** to hide them.
-- Press **<** or **,** to go back 10 seconds; press **>** or **.** to skip forward 10 seconds.
+- Hold **<**/**,** or **>**/**.** to pause playback and jump to a different, non-linear moment once per second. Release the key to resume from the displayed moment.
 - **Performance** changes point-grid density and adaptive display resolution.
+- **Image effects** tunes the lightweight bloom pass and subtle blue grade.
 - **Depth mapping** changes brightness-to-depth conversion, point size, and Z offset.
 - **Visibility clipping** controls the close plane, far plane, and far-cut angle.
 - **Mesh transform** controls mesh position and X-axis rotation.
@@ -43,6 +44,8 @@ The home-page settings are hidden initially:
 The home page uses a jerk-smoothed damped spring for mouse tracking and blends a slow `200 × 120 px` organic drift into the same camera target. Drift and mouse parallax are disabled when the operating system requests reduced motion.
 
 The point-cloud shader masks the top five video rows to remove source noise without modifying the video asset.
+
+The home page uses a single fullscreen post-processing pass for a restrained bloom and cool-blue grade. Timeline scrubbing samples shuffled regions across the entire video, holds each sought frame while the key is down, and resumes normal playback immediately on release.
 
 ## Project structure
 
