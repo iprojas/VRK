@@ -22,6 +22,56 @@ body {
     overscroll-behavior: none;
 }
 
+#viewport {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+}
+
+#viewport canvas {
+    pointer-events: none;
+}
+
+#intro {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background: #000;
+}
+
+#intro[hidden] {
+    display: none;
+}
+
+#entry-button {
+    position: absolute;
+    top: 50%;
+    left: 20%;
+    width: 60%;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    transform: translateY(-50%);
+    cursor: pointer;
+    appearance: none;
+}
+
+#entry-button img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+#entry-button:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: -10px;
+}
+
+#entry-button:disabled {
+    cursor: default;
+}
+
 canvas {
     display: block;
 }

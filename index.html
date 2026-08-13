@@ -8,13 +8,20 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="intro" aria-label="Enter the experience">
+        <button id="entry-button" type="button" aria-label="Start the experience" aria-pressed="false">
+            <img src="assets/logo.svg" alt="Catálogo de Intimidades">
+        </button>
+    </div>
+
     <main id="viewport" tabindex="-1" aria-label="Interactive Kinect point-cloud demo"></main>
-    <p id="status" role="status" aria-live="polite">Loading depth video…</p>
+    <p id="status" role="status" aria-live="polite" hidden>Loading depth video…</p>
     <p id="transport-status" class="sr-only" role="status" aria-live="polite"></p>
 
-    <video id="video" loop muted playsinline preload="metadata" hidden>
+    <video id="video" loop muted playsinline preload="auto" hidden>
         <source src="assets/videos/2-optimized-trimmed.mp4" type="video/mp4">
     </video>
+    <audio id="soundtrack" loop preload="auto" src="assets/Paciencia%20-%20THINGS.mp3"></audio>
 
     <script id="vertex-shader" type="x-shader/x-vertex">
         uniform sampler2D map;
@@ -28,8 +35,10 @@
         uniform float farPlane;
         uniform float farPlaneRotation;
         uniform float bottomCrop;
+        uniform float densityMix;
 
         varying vec3 vColor;
+        varying float vDensityAlpha;
 
         const float XtoZ = 1.11146;
         const float YtoZ = 0.83359;
@@ -45,6 +54,13 @@
             float depth = (color.r + color.g + color.b) / 3.0;
             float z = (1.0 - depth) * (farClipping - nearClipping) + nearClipping;
             vColor = color.rgb;
+
+            // The Low-quality four-pixel lattice remains fully visible. Samples
+            // added by Medium/High fade with distance instead of swapping grids.
+            float lowColumn = 1.0 - step(0.5, mod(position.x, 4.0));
+            float lowRow = 1.0 - step(0.5, mod(position.y, 4.0));
+            float lowSample = lowColumn * lowRow;
+            vDensityAlpha = mix(densityMix, 1.0, lowSample);
 
             float pointX = (position.x / width - 0.5) * z * XtoZ;
             float pointY = (position.y / height - 0.5) * z * YtoZ;
@@ -71,9 +87,13 @@
 
     <script id="fragment-shader" type="x-shader/x-fragment">
         varying vec3 vColor;
+        varying float vDensityAlpha;
 
         void main() {
-            gl_FragColor = vec4(vColor, 1.0);
+            if (vDensityAlpha < 0.001) {
+                discard;
+            }
+            gl_FragColor = vec4(vColor, vDensityAlpha);
         }
     </script>
 
@@ -91,28 +111,40 @@
 
         vec3 brightSample(vec2 offset) {
             vec3 color = texture2D(sceneTexture, vUv + offset / resolution).rgb;
-            return color * smoothstep(0.48, 0.92, luminance(color));
+            float brightness = max(max(color.r, color.g), color.b);
+            return color * smoothstep(0.28, 0.82, brightness);
         }
 
         void main() {
-            vec3 base = texture2D(sceneTexture, vUv).rgb;
+            vec4 baseSample = texture2D(sceneTexture, vUv);
+            vec3 base = baseSample.rgb;
             vec3 bloom = vec3(0.0);
 
-            bloom += brightSample(vec2(-3.0, 0.0));
-            bloom += brightSample(vec2(3.0, 0.0));
-            bloom += brightSample(vec2(0.0, -3.0));
-            bloom += brightSample(vec2(0.0, 3.0));
-            bloom += brightSample(vec2(-2.0, -2.0));
-            bloom += brightSample(vec2(2.0, -2.0));
-            bloom += brightSample(vec2(-2.0, 2.0));
-            bloom += brightSample(vec2(2.0, 2.0));
-            bloom *= vec3(0.55, 0.82, 1.4) * bloomStrength / 8.0;
+            // A few weighted rings make the glow extend beyond a single point
+            // without the cost of a second blur target/pass.
+            bloom += brightSample(vec2(-2.0, 0.0)) * 0.34;
+            bloom += brightSample(vec2(2.0, 0.0)) * 0.34;
+            bloom += brightSample(vec2(0.0, -2.0)) * 0.34;
+            bloom += brightSample(vec2(0.0, 2.0)) * 0.34;
+            bloom += brightSample(vec2(-4.0, -4.0)) * 0.20;
+            bloom += brightSample(vec2(4.0, -4.0)) * 0.20;
+            bloom += brightSample(vec2(-4.0, 4.0)) * 0.20;
+            bloom += brightSample(vec2(4.0, 4.0)) * 0.20;
+            bloom += brightSample(vec2(-8.0, 0.0)) * 0.12;
+            bloom += brightSample(vec2(8.0, 0.0)) * 0.12;
+            bloom += brightSample(vec2(0.0, -8.0)) * 0.12;
+            bloom += brightSample(vec2(0.0, 8.0)) * 0.12;
+            bloom *= vec3(0.58, 0.84, 1.32) * bloomStrength / 2.64;
 
             float light = luminance(base);
             vec3 coolGrade = vec3(light * 0.92, light * 0.97, light * 1.08);
             vec3 graded = mix(base, coolGrade, blueHue);
 
-            gl_FragColor = vec4(graded + bloom, 1.0);
+            float bloomCoverage = clamp(luminance(bloom) * 2.0, 0.0, 1.0);
+            gl_FragColor = vec4(
+                graded + bloom,
+                max(baseSample.a, bloomCoverage)
+            );
         }
     </script>
 
@@ -136,11 +168,23 @@
         const CAMERA_SPEED_FADE_START = 0.65;
         const CAMERA_SPEED_LOOKAHEAD = 0.4;
         const CAMERA_POSITION_EPSILON = 0.5;
-        const CAMERA_VELOCITY_EPSILON = 2;
+        const CAMERA_VELOCITY_EPSILON = 3;
         const CAMERA_ACCELERATION_EPSILON = 2;
         const POINTER_SCALE = 9;
         const WOBBLE_WIDTH_PIXELS = 200;
         const WOBBLE_HEIGHT_PIXELS = 120;
+        const CAMERA_ENTRANCE_DURATION = 15000;
+        const CAMERA_AUDIO_PAN_RANGE = 3200;
+        const AUDIO_MAX_PAN = 0.2;
+        const AUDIO_PAN_RESPONSE = 1.6;
+        const AUDIO_FADE_DURATION = 8;
+        const AUDIO_MIN_VOLUME = 0.3;
+        const AUDIO_MAX_SPEED_VOLUME = 700;
+        const AUDIO_SPEED_RESPONSE = 0.9;
+        const AUDIO_VOLUME_RESPONSE = 1.5;
+        const AUDIO_MUTE_RESPONSE = 12;
+        const POINT_DENSITY_NEAR_DISTANCE = 1400;
+        const POINT_DENSITY_FAR_DISTANCE = 9000;
         const MAX_FRAME_DELTA = 0.05;
         const TIMELINE_SCRUB_INTERVAL = 1000;
         const TIMELINE_SCRUB_CODES = new Set(['Comma', 'Period']);
@@ -166,6 +210,21 @@
         let timelineScrubTimer = 0;
         let timelineScrubActive = false;
         let timelineMomentDeck = [];
+        let experienceStarted = false;
+        let cameraEntranceActive = false;
+        let cameraEntranceStartedAt = 0;
+        let audioContext;
+        let audioSource;
+        let stereoPanner;
+        let audioGain;
+        let currentAudioPan = 0;
+        let audioFadeStartedAt = 0;
+        let smoothedCameraSpeed = 0;
+        let currentMovementVolume = AUDIO_MIN_VOLUME;
+        let currentAudioOutputVolume = 0;
+        let audioCameraPositionInitialized = false;
+        let audioMuted = false;
+        let wasSoundtrackPlayingBeforeHidden = false;
 
         const pointer = new THREE.Vector2();
         const cameraVelocity = new THREE.Vector2();
@@ -174,6 +233,13 @@
         const cameraAcceleration = new THREE.Vector2();
         const desiredCameraAcceleration = new THREE.Vector2();
         const center = new THREE.Vector3(0, 0, 0);
+        // Preserve the original elevation while rotating the horizontal offset
+        // 45 degrees for a three-quarter view and scaling the distance by ~3x.
+        const cameraEntranceStart = new THREE.Vector3(8275, 8100, 8275);
+        const cameraInteractivePosition = new THREE.Vector3(0, 0, 500);
+        const cameraEntranceLookTarget = new THREE.Vector3(0, 900, 0);
+        const cameraLookTarget = cameraEntranceLookTarget.clone();
+        const audioCameraPosition = new THREE.Vector3();
         const postResolution = new THREE.Vector2();
         const heldTimelineKeys = new Set();
         const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -181,12 +247,15 @@
         const transportStatus = document.querySelector('#transport-status');
         const viewport = document.querySelector('#viewport');
         const video = document.querySelector('#video');
+        const soundtrack = document.querySelector('#soundtrack');
+        const intro = document.querySelector('#intro');
+        const entryButton = document.querySelector('#entry-button');
         const settings = {
             quality: 'Medium',
             adaptiveResolution: true,
-            maxPixelRatio: 1.5,
-            bloomStrength: 0.32,
-            blueHue: 0.04
+            maxPixelRatio: 1,
+            bloomStrength: 0.8,
+            blueHue: 0.4
         };
         const performanceState = {
             points: 0,
@@ -203,9 +272,10 @@
                 50,
                 window.innerWidth / window.innerHeight,
                 1,
-                10000
+                30000
             );
-            camera.position.set(0, 0, 500);
+            camera.position.copy(cameraEntranceStart);
+            camera.lookAt(cameraLookTarget);
 
             const texture = new THREE.VideoTexture(video);
             texture.minFilter = THREE.NearestFilter;
@@ -225,14 +295,15 @@
                     closePlane: { value: 1 },
                     farPlane: { value: 2200 },
                     farPlaneRotation: { value: 26 },
-                    bottomCrop: { value: 5 }
+                    bottomCrop: { value: 5 },
+                    densityMix: { value: 0 }
                 },
                 vertexShader: document.querySelector('#vertex-shader').textContent,
                 fragmentShader: document.querySelector('#fragment-shader').textContent,
                 blending: THREE.NormalBlending,
                 depthTest: false,
                 depthWrite: false,
-                transparent: false
+                transparent: true
             });
 
             mesh = new THREE.Points(geometry, material);
@@ -242,8 +313,10 @@
 
             renderer = new THREE.WebGLRenderer({
                 antialias: false,
+                alpha: true,
                 powerPreference: 'high-performance'
             });
+            renderer.setClearColor(0x000000, 0);
             setPixelRatio(getMaximumPixelRatio());
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.querySelector('#viewport').appendChild(renderer.domElement);
@@ -258,6 +331,7 @@
             window.addEventListener('blur', onWindowBlur);
             document.addEventListener('visibilitychange', onVisibilityChange);
             reducedMotion.addEventListener('change', requestRender);
+            entryButton.addEventListener('click', startExperience, { once: true });
             video.addEventListener('playing', () => {
                 status.textContent = '';
                 status.hidden = true;
@@ -270,9 +344,99 @@
                 status.hidden = false;
             });
             video.addEventListener('seeked', requestRender);
+            const renderPausedFirstFrame = () => {
+                texture.needsUpdate = true;
+                requestRender();
+            };
+            video.addEventListener('loadeddata', renderPausedFirstFrame, { once: true });
+            if (video.readyState >= video.HAVE_CURRENT_DATA) {
+                renderPausedFirstFrame();
+            }
+            soundtrack.addEventListener('error', () => {
+                transportStatus.textContent = 'The soundtrack could not be loaded.';
+            });
 
             startRenderScheduler();
+            requestRender();
+        }
+
+        function startExperience() {
+            if (experienceStarted) {
+                return;
+            }
+
+            experienceStarted = true;
+            entryButton.disabled = true;
+            entryButton.setAttribute('aria-pressed', 'true');
+            document.body.classList.add('experience-started');
+
+            // Both media elements and the Web Audio graph are started directly
+            // from the entry gesture so browser autoplay policies are satisfied.
+            startSoundtrack();
             startVideo();
+            startCameraEntrance(performance.now());
+            intro.hidden = true;
+            viewport.focus({ preventScroll: true });
+        }
+
+        function startCameraEntrance(startTime) {
+            cameraEntranceActive = true;
+            cameraEntranceStartedAt = startTime;
+            camera.position.copy(cameraEntranceStart);
+            cameraLookTarget.copy(cameraEntranceLookTarget);
+            cameraInteractivePosition.set(0, 0, 500);
+            cameraVelocity.set(0, 0);
+            cameraAcceleration.set(0, 0);
+            desiredCameraAcceleration.set(0, 0);
+            audioCameraPosition.copy(camera.position);
+            audioCameraPositionInitialized = true;
+            requestRender();
+        }
+
+        function startSoundtrack() {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            audioFadeStartedAt = performance.now() / 1000;
+            currentAudioOutputVolume = 0;
+
+            try {
+                if (AudioContextClass && !audioContext) {
+                    audioContext = new AudioContextClass();
+                    audioSource = audioContext.createMediaElementSource(soundtrack);
+                    audioGain = audioContext.createGain();
+                    audioGain.gain.value = 0;
+
+                    if (typeof audioContext.createStereoPanner === 'function') {
+                        stereoPanner = audioContext.createStereoPanner();
+                        stereoPanner.pan.value = 0;
+                        audioSource
+                            .connect(stereoPanner)
+                            .connect(audioGain)
+                            .connect(audioContext.destination);
+                    } else {
+                        audioSource.connect(audioGain).connect(audioContext.destination);
+                    }
+                }
+
+                if (audioContext?.state === 'suspended') {
+                    audioContext.resume().catch(() => {});
+                }
+
+                soundtrack.play().catch(() => {
+                    transportStatus.textContent = 'Audio playback is blocked by this browser.';
+                });
+            } catch {
+                // The soundtrack can still play normally if Web Audio is not available.
+                soundtrack.play().catch(() => {
+                    transportStatus.textContent = 'Audio playback is blocked by this browser.';
+                });
+            }
+        }
+
+        function toggleAudioMute() {
+            audioMuted = !audioMuted;
+            transportStatus.textContent = audioMuted
+                ? 'Soundtrack muted. Playback continues.'
+                : 'Soundtrack unmuted.';
             requestRender();
         }
 
@@ -450,9 +614,26 @@
         }
 
         function onKeyDown(event) {
+            if (!experienceStarted) {
+                return;
+            }
+
             const targetIsInteractive = event.target instanceof Element && event.target.closest(
                 'input, textarea, select, button, a, [contenteditable="true"]'
             );
+
+            if (
+                event.code === 'KeyM' &&
+                !event.repeat &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !targetIsInteractive
+            ) {
+                event.preventDefault();
+                toggleAudioMute();
+                return;
+            }
 
             if (event.code === 'Escape' && controlsVisible) {
                 event.preventDefault();
@@ -640,13 +821,33 @@
         function renderFrame(time) {
             renderRequested = false;
 
-            const deltaTime = lastRenderTime === 0
+            const frameDeltaTime = lastRenderTime === 0
                 ? 1 / 60
-                : Math.min((time - lastRenderTime) / 1000, MAX_FRAME_DELTA);
+                : (time - lastRenderTime) / 1000;
+            const deltaTime = Math.min(frameDeltaTime, MAX_FRAME_DELTA);
             lastRenderTime = time;
 
-            const cameraIsMoving = updateCameraMotion(deltaTime, time / 1000);
-            camera.lookAt(center);
+            let cameraIsMoving;
+
+            if (!experienceStarted) {
+                camera.position.copy(cameraEntranceStart);
+                cameraLookTarget.copy(cameraEntranceLookTarget);
+                cameraIsMoving = false;
+            } else if (cameraEntranceActive) {
+                // Evolve the existing mouse/spring state without directly
+                // applying it while the scripted camera remains in control.
+                updateCameraMotion(deltaTime, time / 1000, false);
+                cameraIsMoving = updateCameraEntrance(time);
+            } else {
+                cameraIsMoving = updateCameraMotion(deltaTime, time / 1000);
+                cameraLookTarget.copy(center);
+            }
+            camera.lookAt(cameraLookTarget);
+            updatePointDensity();
+            updateAudio(frameDeltaTime, time / 1000);
+
+            // This is the only scene render: it feeds the existing post pass,
+            // whose output is then drawn to the default framebuffer.
             renderer.setRenderTarget(sceneRenderTarget);
             renderer.render(scene, camera);
             renderer.setRenderTarget(null);
@@ -657,7 +858,141 @@
             }
         }
 
-        function updateCameraMotion(deltaTime, elapsedTime) {
+        function updatePointDensity() {
+            const cameraDistance = camera.position.distanceTo(center);
+            const distanceAmount = THREE.MathUtils.smoothstep(
+                cameraDistance,
+                POINT_DENSITY_NEAR_DISTANCE,
+                POINT_DENSITY_FAR_DISTANCE
+            );
+            mesh.material.uniforms.densityMix.value = 1 - distanceAmount;
+        }
+
+        function updateCameraEntrance(time) {
+            const duration = reducedMotion.matches
+                ? CAMERA_ENTRANCE_DURATION * 0.45
+                : CAMERA_ENTRANCE_DURATION;
+            const progress = THREE.MathUtils.clamp(
+                (time - cameraEntranceStartedAt) / duration,
+                0,
+                1
+            );
+            // Smoothstep keeps the long diagonal descent deliberate while
+            // avoiding abrupt changes in velocity at either end.
+            const easedProgress = progress * progress * (3 - 2 * progress);
+
+            camera.position.lerpVectors(
+                cameraEntranceStart,
+                cameraInteractivePosition,
+                easedProgress
+            );
+            cameraLookTarget.lerpVectors(
+                cameraEntranceLookTarget,
+                center,
+                easedProgress
+            );
+
+            if (progress < 1) {
+                return true;
+            }
+
+            camera.position.copy(cameraInteractivePosition);
+            cameraLookTarget.copy(center);
+            cameraEntranceActive = false;
+            return true;
+        }
+
+        function updateAudio(frameDeltaTime, elapsedTime) {
+            const smoothingDeltaTime = Math.min(frameDeltaTime, MAX_FRAME_DELTA);
+            const horizontalCameraAmount = THREE.MathUtils.clamp(
+                camera.position.x / CAMERA_AUDIO_PAN_RANGE,
+                -1,
+                1
+            );
+            const targetPan = horizontalCameraAmount * AUDIO_MAX_PAN;
+            const panBlend = 1 - Math.exp(
+                -AUDIO_PAN_RESPONSE * smoothingDeltaTime
+            );
+            currentAudioPan = THREE.MathUtils.lerp(
+                currentAudioPan,
+                targetPan,
+                panBlend
+            );
+
+            if (stereoPanner && audioContext) {
+                stereoPanner.pan.setValueAtTime(currentAudioPan, audioContext.currentTime);
+            }
+
+            if (!audioCameraPositionInitialized) {
+                audioCameraPosition.copy(camera.position);
+                audioCameraPositionInitialized = true;
+            }
+
+            // Frame-to-frame displacement measures the rendered camera itself,
+            // so the same velocity signal spans the entrance and mouse control.
+            const cameraSpeed = camera.position.distanceTo(audioCameraPosition) /
+                Math.max(frameDeltaTime, 1 / 240);
+            audioCameraPosition.copy(camera.position);
+
+            const speedBlend = 1 - Math.exp(
+                -AUDIO_SPEED_RESPONSE * smoothingDeltaTime
+            );
+            smoothedCameraSpeed = THREE.MathUtils.lerp(
+                smoothedCameraSpeed,
+                cameraSpeed,
+                speedBlend
+            );
+            const speedAmount = THREE.MathUtils.smoothstep(
+                smoothedCameraSpeed,
+                0,
+                AUDIO_MAX_SPEED_VOLUME
+            );
+            const targetMovementVolume = THREE.MathUtils.lerp(
+                AUDIO_MIN_VOLUME,
+                1,
+                speedAmount
+            );
+            const volumeBlend = 1 - Math.exp(
+                -AUDIO_VOLUME_RESPONSE * smoothingDeltaTime
+            );
+            currentMovementVolume = THREE.MathUtils.lerp(
+                currentMovementVolume,
+                targetMovementVolume,
+                volumeBlend
+            );
+
+            const fadeProgress = THREE.MathUtils.clamp(
+                (elapsedTime - audioFadeStartedAt) / AUDIO_FADE_DURATION,
+                0,
+                1
+            );
+            const fadeAmount = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+            const targetOutputVolume = audioMuted
+                ? 0
+                : currentMovementVolume * fadeAmount;
+            const outputResponse = audioMuted
+                ? AUDIO_MUTE_RESPONSE
+                : AUDIO_VOLUME_RESPONSE;
+            const outputBlend = 1 - Math.exp(
+                -outputResponse * smoothingDeltaTime
+            );
+            currentAudioOutputVolume = THREE.MathUtils.lerp(
+                currentAudioOutputVolume,
+                targetOutputVolume,
+                outputBlend
+            );
+
+            if (audioGain && audioContext) {
+                audioGain.gain.setValueAtTime(
+                    currentAudioOutputVolume,
+                    audioContext.currentTime
+                );
+            } else {
+                soundtrack.volume = currentAudioOutputVolume;
+            }
+        }
+
+        function updateCameraMotion(deltaTime, elapsedTime, applyToCamera = true) {
             const motionEnabled = !reducedMotion.matches;
             const wobbleX = motionEnabled
                 ? WOBBLE_WIDTH_PIXELS * POINTER_SCALE * 0.5 * (
@@ -680,8 +1015,8 @@
             );
 
             cameraTargetDelta.set(
-                cameraTarget.x - camera.position.x,
-                cameraTarget.y - camera.position.y
+                cameraTarget.x - cameraInteractivePosition.x,
+                cameraTarget.y - cameraInteractivePosition.y
             );
 
             // A damped spring provides the target acceleration. Tanh saturation
@@ -737,8 +1072,12 @@
                 cameraVelocity.setLength(CAMERA_MAX_SPEED);
             }
 
-            camera.position.x += cameraVelocity.x * deltaTime;
-            camera.position.y += cameraVelocity.y * deltaTime;
+            cameraInteractivePosition.x += cameraVelocity.x * deltaTime;
+            cameraInteractivePosition.y += cameraVelocity.y * deltaTime;
+
+            if (applyToCamera) {
+                camera.position.copy(cameraInteractivePosition);
+            }
 
             const remainingDistance = cameraTargetDelta.length();
 
@@ -821,6 +1160,10 @@
         }
 
         function onPointerMove(event) {
+            if (!experienceStarted) {
+                return;
+            }
+
             pointer.x = (event.clientX - window.innerWidth / 2) * POINTER_SCALE;
             pointer.y = (event.clientY - window.innerHeight / 2) * POINTER_SCALE;
             requestRender();
@@ -829,7 +1172,6 @@
         function onResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
             setPixelRatio(Math.min(performanceState.pixelRatio, getMaximumPixelRatio()));
             requestRender();
         }
@@ -837,8 +1179,10 @@
         async function onVisibilityChange() {
             if (document.hidden) {
                 wasPlayingBeforeHidden = timelineScrubActive || !video.paused;
+                wasSoundtrackPlayingBeforeHidden = !soundtrack.paused;
                 finishTimelineScrub({ resume: false });
                 video.pause();
+                soundtrack.pause();
                 window.cancelAnimationFrame(renderRequest);
                 renderRequested = false;
                 lastRenderTime = 0;
@@ -855,6 +1199,11 @@
                     status.hidden = false;
                     window.addEventListener('pointerdown', retryVideo, { once: true });
                 }
+            }
+            if (wasSoundtrackPlayingBeforeHidden) {
+                soundtrack.play().catch(() => {
+                    transportStatus.textContent = 'Click the entry control to resume audio.';
+                });
             }
             requestRender();
         }
