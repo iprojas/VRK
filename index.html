@@ -27,14 +27,14 @@
         uniform float closePlane;
         uniform float farPlane;
         uniform float farPlaneRotation;
-        uniform float topCrop;
+        uniform float bottomCrop;
 
         varying vec3 vColor;
 
         const float XtoZ = 1.11146;
         const float YtoZ = 0.83359;
         void main() {
-            if (position.y >= height - topCrop) {
+            if (position.y < bottomCrop) {
                 gl_PointSize = 0.0;
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
                 return;
@@ -225,7 +225,7 @@
                     closePlane: { value: 1 },
                     farPlane: { value: 2200 },
                     farPlaneRotation: { value: 26 },
-                    topCrop: { value: 10 }
+                    bottomCrop: { value: 5 }
                 },
                 vertexShader: document.querySelector('#vertex-shader').textContent,
                 fragmentShader: document.querySelector('#fragment-shader').textContent,
@@ -399,8 +399,8 @@
                 .add(material.uniforms.farPlaneRotation, 'value', -45, 45, 1)
                 .name('Far cut angle');
             clippingFolder
-                .add(material.uniforms.topCrop, 'value', 0, 40, 1)
-                .name('Top crop (px)');
+                .add(material.uniforms.bottomCrop, 'value', 0, 40, 1)
+                .name('Bottom crop (px)');
 
             closeControl.onChange((value) => {
                 if (value > material.uniforms.farPlane.value) {
