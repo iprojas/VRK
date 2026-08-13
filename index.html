@@ -4,7 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Interactive Kinect depth-video point cloud rendered with Three.js.">
-    <title>Kinect Point Cloud — Clipping Demo</title>
+    <meta property="og:title" content="Epistemology of the Intimate">
+    <meta property="og:type" content="website">
+    <meta property="og:description" content="Interactive Kinect depth-video point cloud rendered with Three.js.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Epistemology of the Intimate">
+    <meta name="twitter:description" content="Interactive Kinect depth-video point cloud rendered with Three.js.">
+    <title>Epistemology of the Intimate</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -187,7 +193,9 @@
         const POINT_DENSITY_FAR_DISTANCE = 9000;
         const MAX_FRAME_DELTA = 0.05;
         const TIMELINE_SCRUB_INTERVAL = 1000;
-        const TIMELINE_SCRUB_CODES = new Set(['Comma', 'Period']);
+        const TIMELINE_SCRUB_CODES = new Set(['Comma']);
+        const RANDOM_SKIP_MIN_SECONDS = 30;
+        const RANDOM_SKIP_MAX_SECONDS = 120;
 
         let camera;
         let renderer;
@@ -210,6 +218,8 @@
         let timelineScrubTimer = 0;
         let timelineScrubActive = false;
         let timelineMomentDeck = [];
+        let titleFlashTimer = 0;
+        let lastRandomSkipTime = -1;
         let experienceStarted = false;
         let cameraEntranceActive = false;
         let cameraEntranceStartedAt = 0;
@@ -642,6 +652,19 @@
             }
 
             if (
+                event.code === 'Period' &&
+                !event.repeat &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !targetIsInteractive
+            ) {
+                event.preventDefault();
+                skipToRandomFutureMoment();
+                return;
+            }
+
+            if (
                 TIMELINE_SCRUB_CODES.has(event.code) &&
                 !event.altKey &&
                 !event.ctrlKey &&
@@ -700,11 +723,109 @@
             timelineMomentDeck = [];
             video.pause();
             transportStatus.textContent = 'Timeline scrubbing started. Hold for one paused moment per second.';
-            showNextTimelineMoment();
+            showNextTimelineMoment(keyCode);
             timelineScrubTimer = window.setInterval(
-                showNextTimelineMoment,
+                () => showNextTimelineMoment(keyCode),
                 TIMELINE_SCRUB_INTERVAL
             );
+        }
+
+        function skipToRandomFutureMoment() {
+            if (!Number.isFinite(video.duration) || video.duration <= 0) {
+                return;
+            }
+
+            const maximumTime = Math.max(0, video.duration - 0.001);
+            const minimumTarget = Math.min(
+                video.currentTime + RANDOM_SKIP_MIN_SECONDS,
+                maximumTime
+            );
+            const maximumTarget = Math.min(
+                video.currentTime + RANDOM_SKIP_MAX_SECONDS,
+                maximumTime
+            );
+            let nextTime = THREE.MathUtils.lerp(
+                minimumTarget,
+                maximumTarget,
+                Math.random()
+            );
+
+            // A reroll prevents practically identical results when there is
+            // enough future timeline left to choose another distinct moment.
+            if (
+                maximumTarget - minimumTarget > 1 &&
+                Math.abs(nextTime - lastRandomSkipTime) < 1
+            ) {
+                nextTime = minimumTarget + (
+                    (nextTime - minimumTarget + (maximumTarget - minimumTarget) * 0.5) %
+                    (maximumTarget - minimumTarget)
+                );
+            }
+
+            lastRandomSkipTime = nextTime;
+            video.currentTime = nextTime;
+            transportStatus.textContent = `Jumped forward to ${formatVideoTime(nextTime)}.`;
+            playTimelineClack();
+            flashTitle();
+            requestRender();
+        }
+
+        function playTimelineClack() {
+            if (!audioContext || !audioGain || audioMuted) {
+                return;
+            }
+
+            const startedAt = audioContext.currentTime;
+            const duration = 0.14;
+            const sampleCount = Math.ceil(audioContext.sampleRate * duration);
+            const noiseBuffer = audioContext.createBuffer(
+                1,
+                sampleCount,
+                audioContext.sampleRate
+            );
+            const noise = noiseBuffer.getChannelData(0);
+            const noiseSource = audioContext.createBufferSource();
+            const oscillator = audioContext.createOscillator();
+            const lowPass = audioContext.createBiquadFilter();
+            const clackGain = audioContext.createGain();
+
+            for (let index = 0; index < sampleCount; index++) {
+                const envelope = Math.exp(-index / (audioContext.sampleRate * 0.028));
+                noise[index] = (Math.random() * 2 - 1) * envelope;
+            }
+
+            noiseSource.buffer = noiseBuffer;
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(105, startedAt);
+            oscillator.frequency.exponentialRampToValueAtTime(62, startedAt + duration);
+            lowPass.type = 'lowpass';
+            lowPass.frequency.setValueAtTime(420, startedAt);
+            lowPass.Q.value = 0.7;
+            clackGain.gain.setValueAtTime(0.011, startedAt);
+            clackGain.gain.exponentialRampToValueAtTime(0.0001, startedAt + duration);
+
+            noiseSource.connect(lowPass);
+            oscillator.connect(lowPass);
+            lowPass.connect(clackGain).connect(audioGain);
+            noiseSource.start(startedAt);
+            noiseSource.stop(startedAt + duration);
+            oscillator.start(startedAt);
+            oscillator.stop(startedAt + duration);
+        }
+
+        function flashTitle() {
+            window.clearTimeout(titleFlashTimer);
+            intro.classList.remove('is-skip-flashing');
+            intro.hidden = false;
+
+            // Restart the short CSS animation even when skips happen rapidly.
+            void intro.offsetWidth;
+            intro.classList.add('is-skip-flashing');
+            titleFlashTimer = window.setTimeout(() => {
+                intro.classList.remove('is-skip-flashing');
+                intro.hidden = true;
+                titleFlashTimer = 0;
+            }, 180);
         }
 
         function finishTimelineScrub({ resume = true } = {}) {
@@ -728,7 +849,7 @@
             }
         }
 
-        function showNextTimelineMoment() {
+        function showNextTimelineMoment(keyCode) {
             if (!Number.isFinite(video.duration) || video.duration <= 0) {
                 return;
             }

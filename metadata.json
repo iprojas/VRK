@@ -1,5 +1,5 @@
 {
-  "title": "Kinect Point Cloud — Clipping Demo",
+  "title": "Epistemology of the Intimate",
   "slug": "kinect-point-cloud-clipping",
   "version": "1.12.0",
   "published": "2026-08-13",
@@ -111,8 +111,9 @@
     "toggleSoundtrackMute": "M",
     "seekBackwardSeconds": 10,
     "seekBackwardKeys": ["<", ","],
-    "seekForwardSeconds": 10,
-    "seekForwardKeys": [">", "."]
+    "randomForwardSeekRangeSeconds": [30, 120],
+    "randomForwardSeekKey": ".",
+    "periodSeekFeedback": ["muted low clack", "brief SVG title flash"]
   },
   "dependencies": {
     "three": "0.143.0",
