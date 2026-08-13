@@ -808,6 +808,7 @@
             oscillator.connect(lowPass);
             // Keep transport feedback audible during the soundtrack fade and
             // low-velocity state instead of multiplying it by that dynamic gain.
+            lowPass.connect(clackGain);
             clackGain.connect(audioContext.destination);
             noiseSource.start(startedAt);
             noiseSource.stop(startedAt + duration);
