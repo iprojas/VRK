@@ -20,6 +20,7 @@ body,
 body {
     background: #000;
     overscroll-behavior: none;
+    touch-action: none;
 }
 
 #viewport {

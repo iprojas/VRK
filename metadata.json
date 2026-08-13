@@ -1,7 +1,7 @@
 {
   "title": "Epistemology of the Intimate",
   "slug": "kinect-point-cloud-clipping",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "published": "2026-08-13",
   "language": "en",
   "type": "interactive-webgl-demo",
@@ -17,6 +17,7 @@
   ],
   "features": [
     "Layered supplied SVG-logo and point-cloud entry with hard-cut activation",
+    "User-gesture fullscreen request with graceful fallback",
     "User-gesture audio activation",
     "Gradual soundtrack fade-in and camera-speed-reactive volume",
     "Non-destructive M-key soundtrack mute control",
@@ -34,6 +35,7 @@
     "Depth mapping controls",
     "Mesh position and X-rotation controls",
     "Mouse-driven camera",
+    "Single-touch camera control with two-finger random timeline skip",
     "Soft damped-spring camera movement",
     "Continuous organic camera drift",
     "Settings hidden by default with Space-key toggle",
@@ -114,6 +116,12 @@
     "randomForwardSeekRangeSeconds": [30, 120],
     "randomForwardSeekKey": ".",
     "periodSeekFeedback": ["muted low clack", "brief SVG title flash"]
+  },
+  "touchGestures": {
+    "cameraControl": "single-touch movement",
+    "randomForwardSeek": "two-finger tap",
+    "randomForwardSeekRangeSeconds": [30, 120],
+    "feedback": ["muted low clack", "brief SVG title flash"]
   },
   "dependencies": {
     "three": "0.143.0",

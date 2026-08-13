@@ -30,7 +30,7 @@ The legacy VR pages load Three.js support modules from jsDelivr and therefore re
 
 ## Home-page controls
 
-The initial composition places the paused point cloud beneath `assets/logo.svg`. The title uses CSS `mix-blend-mode: exclusion` against the WebGL canvas. Click the logo to enter. It disappears in a hard cut while that gesture starts the depth video and fades in `Paciencia - THINGS.mp3`. A gradual elevated three-quarter camera descent converges on the live mouse-derived camera state, then hands back to the existing mouse controller without a position jump. Horizontal camera movement gently biases the soundtrack within a narrow stereo range so both channels remain present, while the rendered camera's velocity continuously raises its level from 30% toward 100% across both the entrance and interactive movement. Press **M** to mute or restore the output without interrupting playback.
+The initial composition places the paused point cloud beneath `assets/logo.svg`. The title uses CSS `mix-blend-mode: exclusion` against the WebGL canvas. Click the logo to enter and request fullscreen where the browser permits it. It disappears in a hard cut while that gesture starts the depth video and starts `Paciencia - THINGS.mp3` at an audible 30% floor. A gradual elevated three-quarter camera descent converges on the live pointer-derived camera state, then hands back to the existing pointer controller without a position jump. Horizontal camera movement gently biases the soundtrack within a narrow stereo range so both channels remain present, while the rendered camera's velocity continuously raises its level from 30% toward 100% across both the entrance and interactive movement. Press **M** to mute or restore the output without interrupting playback.
 
 The home-page settings are hidden initially:
 
@@ -38,6 +38,7 @@ The home-page settings are hidden initially:
 - Press **Space** again or **Escape** to hide them.
 - Press **M** to mute or restore the soundtrack output while playback continues.
 - Press **.** to jump 30–120 seconds forward without interrupting playback, accompanied by a muted projector-style clack and title flash.
+- On touch devices, a quick **two-finger tap** performs the same random forward jump and feedback; one-finger camera movement remains available.
 - Hold **,** to pause playback and jump to a different, non-linear moment once per second. Release the key to resume from the displayed moment.
 - **Performance** changes point-grid density and adaptive display resolution.
 - **Image effects** tunes the lightweight bloom pass and subtle blue grade.

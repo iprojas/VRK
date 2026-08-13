@@ -196,6 +196,9 @@
         const TIMELINE_SCRUB_CODES = new Set(['Comma']);
         const RANDOM_SKIP_MIN_SECONDS = 30;
         const RANDOM_SKIP_MAX_SECONDS = 120;
+        const TIMELINE_CLACK_ENABLED = false;
+        const TWO_FINGER_TAP_MAX_DURATION = 350;
+        const TWO_FINGER_TAP_MAX_MOVEMENT = 24;
 
         let camera;
         let renderer;
@@ -235,6 +238,7 @@
         let audioCameraPositionInitialized = false;
         let audioMuted = false;
         let wasSoundtrackPlayingBeforeHidden = false;
+        let twoFingerTapGesture = null;
 
         const pointer = new THREE.Vector2();
         const cameraVelocity = new THREE.Vector2();
@@ -336,6 +340,10 @@
 
             window.addEventListener('resize', onResize);
             window.addEventListener('pointermove', onPointerMove, { passive: true });
+            window.addEventListener('touchstart', onTouchStart, { passive: false });
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
+            window.addEventListener('touchend', onTouchEnd, { passive: false });
+            window.addEventListener('touchcancel', onTouchCancel, { passive: false });
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
             window.addEventListener('blur', onWindowBlur);
@@ -375,6 +383,7 @@
                 return;
             }
 
+            requestExperienceFullscreen();
             experienceStarted = true;
             entryButton.disabled = true;
             entryButton.setAttribute('aria-pressed', 'true');
@@ -387,6 +396,22 @@
             startCameraEntrance(performance.now());
             intro.hidden = true;
             viewport.focus({ preventScroll: true });
+        }
+
+        function requestExperienceFullscreen() {
+            const root = document.documentElement;
+
+            try {
+                if (typeof root.requestFullscreen === 'function') {
+                    const fullscreenRequest = root.requestFullscreen({ navigationUI: 'hide' });
+                    fullscreenRequest?.catch(() => {});
+                } else if (typeof root.webkitRequestFullscreen === 'function') {
+                    root.webkitRequestFullscreen();
+                }
+            } catch {
+                // Fullscreen is an enhancement: unsupported or denied requests
+                // must not interrupt media activation or the camera entrance.
+            }
         }
 
         function startCameraEntrance(startTime) {
@@ -406,14 +431,14 @@
         function startSoundtrack() {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             audioFadeStartedAt = performance.now() / 1000;
-            currentAudioOutputVolume = 0;
+            currentAudioOutputVolume = AUDIO_MIN_VOLUME;
 
             try {
                 if (AudioContextClass && !audioContext) {
                     audioContext = new AudioContextClass();
                     audioSource = audioContext.createMediaElementSource(soundtrack);
                     audioGain = audioContext.createGain();
-                    audioGain.gain.value = 0;
+                    audioGain.gain.value = AUDIO_MIN_VOLUME;
 
                     if (typeof audioContext.createStereoPanner === 'function') {
                         stereoPanner = audioContext.createStereoPanner();
@@ -771,7 +796,7 @@
         }
 
         function playTimelineClack() {
-            if (!audioContext || !audioGain || audioMuted) {
+            if (!TIMELINE_CLACK_ENABLED || !audioContext || !audioGain || audioMuted) {
                 return;
             }
 
@@ -1093,7 +1118,11 @@
             const fadeAmount = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
             const targetOutputVolume = audioMuted
                 ? 0
-                : currentMovementVolume * fadeAmount;
+                : THREE.MathUtils.lerp(
+                    AUDIO_MIN_VOLUME,
+                    currentMovementVolume,
+                    fadeAmount
+                );
             const outputResponse = audioMuted
                 ? AUDIO_MUTE_RESPONSE
                 : AUDIO_VOLUME_RESPONSE;
@@ -1288,9 +1317,106 @@
                 return;
             }
 
+            // Single-touch pointer movement continues to drive the camera. Only
+            // suppress touch camera input while a multi-touch gesture is active.
+            if (event.pointerType === 'touch' && twoFingerTapGesture) {
+                return;
+            }
+
             pointer.x = (event.clientX - window.innerWidth / 2) * POINTER_SCALE;
             pointer.y = (event.clientY - window.innerHeight / 2) * POINTER_SCALE;
             requestRender();
+        }
+
+        function onTouchStart(event) {
+            if (!experienceStarted || event.touches.length < 2) {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (twoFingerTapGesture) {
+                twoFingerTapGesture.valid = false;
+                return;
+            }
+
+            const startPoints = new Map();
+            for (const touch of event.touches) {
+                startPoints.set(touch.identifier, {
+                    x: touch.clientX,
+                    y: touch.clientY
+                });
+            }
+
+            twoFingerTapGesture = {
+                startedAt: performance.now(),
+                startPoints,
+                valid: event.touches.length === 2
+            };
+        }
+
+        function onTouchMove(event) {
+            if (!twoFingerTapGesture) {
+                return;
+            }
+
+            event.preventDefault();
+            validateTwoFingerTapMovement(event.touches);
+        }
+
+        function onTouchEnd(event) {
+            if (!twoFingerTapGesture) {
+                return;
+            }
+
+            event.preventDefault();
+            validateTwoFingerTapMovement(event.changedTouches);
+
+            if (event.touches.length > 0) {
+                return;
+            }
+
+            const shouldSkip = twoFingerTapGesture.valid &&
+                performance.now() - twoFingerTapGesture.startedAt <=
+                    TWO_FINGER_TAP_MAX_DURATION;
+            twoFingerTapGesture = null;
+
+            if (shouldSkip) {
+                skipToRandomFutureMoment();
+            }
+        }
+
+        function onTouchCancel(event) {
+            if (!twoFingerTapGesture) {
+                return;
+            }
+
+            event.preventDefault();
+            twoFingerTapGesture.valid = false;
+
+            if (event.touches.length === 0) {
+                twoFingerTapGesture = null;
+            }
+        }
+
+        function validateTwoFingerTapMovement(touches) {
+            if (!twoFingerTapGesture?.valid) {
+                return;
+            }
+
+            for (const touch of touches) {
+                const startPoint = twoFingerTapGesture.startPoints.get(touch.identifier);
+                if (
+                    !startPoint ||
+                    Math.hypot(
+                        touch.clientX - startPoint.x,
+                        touch.clientY - startPoint.y
+                    ) > TWO_FINGER_TAP_MAX_MOVEMENT
+                ) {
+                    twoFingerTapGesture.valid = false;
+                    return;
+                }
+            }
         }
 
         function onResize() {
