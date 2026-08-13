@@ -196,7 +196,7 @@
         const TIMELINE_SCRUB_CODES = new Set(['Comma']);
         const RANDOM_SKIP_MIN_SECONDS = 30;
         const RANDOM_SKIP_MAX_SECONDS = 120;
-        const TIMELINE_CLACK_ENABLED = false;
+        const TIMELINE_CLACK_ENABLED = true;
         const TWO_FINGER_TAP_MAX_DURATION = 350;
         const TWO_FINGER_TAP_MAX_MOVEMENT = 24;
 
@@ -826,7 +826,7 @@
             lowPass.type = 'lowpass';
             lowPass.frequency.setValueAtTime(420, startedAt);
             lowPass.Q.value = 0.7;
-            clackGain.gain.setValueAtTime(0.02, startedAt);
+            clackGain.gain.setValueAtTime(0.003, startedAt);
             clackGain.gain.exponentialRampToValueAtTime(0.0001, startedAt + duration);
 
             noiseSource.connect(lowPass);
